@@ -4,6 +4,8 @@ Frontière stricte (CLAUDE.md, décision 2) : aucun champ de ce module ne
 porte un montant calculé. Tout ce qui est ici a été LU sur un document.
 """
 
+from datetime import date
+from decimal import Decimal
 from enum import StrEnum
 from typing import Self
 
@@ -11,9 +13,33 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FieldStatus(StrEnum):
-    READ = "read"              # lu sur le document
+    READ = "read"  # lu sur le document
     UNREADABLE = "unreadable"  # présent mais illisible -> validation humaine
-    ABSENT = "absent"          # le document ne porte pas ce champ
+    ABSENT = "absent"  # le document ne porte pas ce champ
+
+
+class ArithmeticCheck(StrEnum):
+    OK = "ok"  # qty × prix unitaire retombe sur le total ligne
+    MISMATCH = "mismatch"  # les trois nombres se contredisent
+    INCOMPLETE = "incomplete"  # un des trois n'a pas été lu
+
+
+# Écart maximal toléré entre qty * unit_price_ht et line_total_ht.
+# Absolu, pas relatif : les fournisseurs arrondissent au centime par ligne
+# (12,5 × 8,47 = 105,875 s'imprime 105,88). Une tolérance relative
+# laisserait passer 3 € d'écart sur une ligne à 100 €.
+#
+# Limite connue, à mesurer avec scripts/evaluate.py : si le fournisseur
+# imprime un prix unitaire lui-même arrondi, l'erreur est proportionnelle
+# à la quantité (qty=100 → jusqu'à 0,50 €). Un plancher absolu suffira
+# tant que les quantités restent petites, pas au-delà.
+ARITHMETIC_TOLERANCE = Decimal("0.02")
+
+# Tolérance au niveau facture. Plus lâche : les écarts de ligne s'ajoutent,
+# et surtout Σ lignes ≠ total_ht dès qu'il y a une remise de pied de page,
+# des frais de port ou une consigne. Un MISMATCH ici est donc une preuve
+# plus faible qu'un MISMATCH de ligne — il signale « regarde », pas « faux ».
+INVOICE_TOTAL_TOLERANCE = Decimal("0.05")
 
 
 class Extracted[T](BaseModel):
@@ -57,3 +83,101 @@ class Extracted[T](BaseModel):
         if self.status is FieldStatus.ABSENT:
             return False
         return self.status is FieldStatus.UNREADABLE or self.confidence < threshold
+
+
+class RawInvoiceLine(BaseModel):
+    """Une ligne de facture telle qu'elle a été LUE.
+
+    Couche frontière : sortie brute du modèle, avant normalisation. Rien
+    n'est calculé ici, rien n'est converti en unité de base.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # Position sur le document. Nu : personne ne corrige un numéro de ligne
+    # à la main, et à défaut on retombe sur l'index positionnel.
+    line_no: int | None = None
+
+    # Nu et obligatoire. L'incertitude sur un libellé n'est pas une
+    # incertitude de lecture mais de MAPPING : elle vit dans
+    # supplier_product.status / .confidence, pas ici.
+    raw_label: str = Field(min_length=1)
+
+    qty: Extracted[Decimal]
+
+    # L'unité TELLE QU'IMPRIMÉE : "KG", "CT", "PCE", "L", "COLIS"...
+    # Non normalisée — la conversion en unité de base est le travail de
+    # normalize.py. Pas encore de colonne pour l'accueillir côté SQL :
+    # cf. 001_schema.sql, section « PIÈGES À TRAITER ENSUITE ».
+    raw_unit: Extracted[str]
+
+    unit_price_ht: Extracted[Decimal]
+
+    # Lu sur le papier, JAMAIS déduit de qty * unit_price_ht. C'est
+    # précisément ce qui rend le recoupement arithmétique possible.
+    line_total_ht: Extracted[Decimal]
+
+    def check_arithmetic(self, tolerance: Decimal = ARITHMETIC_TOLERANCE) -> ArithmeticCheck:
+        """Recoupe qty × unit_price_ht contre le total imprimé sur la ligne.
+
+        Ne lève jamais : une ligne incohérente est un objet valide qu'on
+        veut construire, puis router vers la validation. Et ne reconstruit
+        rien — déduire le champ manquant rendrait ce contrôle tautologique.
+        """
+        qty = self.qty.value
+        price = self.unit_price_ht.value
+        total = self.line_total_ht.value
+
+        # Tester les valeurs plutôt que les statuts : l'invariant de
+        # Extracted garantit value is None ⟺ status is not READ, et cette
+        # forme-ci écarte le None pour le typage.
+        if qty is None or price is None or total is None:
+            return ArithmeticCheck.INCOMPLETE
+
+        ecart = abs(qty * price - total)
+        return ArithmeticCheck.OK if ecart <= tolerance else ArithmeticCheck.MISMATCH
+
+
+class RawInvoice(BaseModel):
+    """Une facture telle qu'elle a été LUE.
+
+    C'est exactement le contrat de sortie du modèle : rien ici qui ne se
+    lise sur le document. `source_uri` et `source_hash` en sont absents à
+    dessein — ils sont produits par le pipeline, et les mettre dans ce
+    schéma reviendrait à demander au modèle de les inventer.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supplier_name: Extracted[str]
+    invoice_number: Extracted[str]
+    invoice_date: Extracted[date]
+    total_ht: Extracted[Decimal]
+
+    # Hors schéma SQL, et c'est un ajout de ma part : confondre HT et TTC
+    # est l'erreur qui coûte le plus cher ici — elle gonfle silencieusement
+    # tous les coûts de 5,5 à 20 %. Lire les deux permet de vérifier que
+    # total_ttc ≈ total_ht × (1 + taux) et donc qu'on a pris le bon nombre.
+    total_ttc: Extracted[Decimal]
+
+    lines: list[RawInvoiceLine] = Field(min_length=1)
+
+    def check_total(self, tolerance: Decimal = INVOICE_TOTAL_TOLERANCE) -> ArithmeticCheck:
+        """Recoupe la somme des lignes contre le total HT imprimé.
+
+        C'est le seul contrôle qui attrape une ligne entièrement manquante
+        (bas de page coupé au scan) : aucune enveloppe par champ ne peut
+        signaler l'absence de ce qui n'a jamais été lu.
+        """
+        total = self.total_ht.value
+        if total is None:
+            return ArithmeticCheck.INCOMPLETE
+
+        somme = Decimal(0)
+        for ligne in self.lines:
+            montant = ligne.line_total_ht.value
+            if montant is None:
+                return ArithmeticCheck.INCOMPLETE
+            somme += montant
+
+        return ArithmeticCheck.OK if abs(somme - total) <= tolerance else ArithmeticCheck.MISMATCH

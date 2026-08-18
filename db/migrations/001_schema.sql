@@ -322,6 +322,13 @@ $$ LANGUAGE SQL STABLE;
 --
 --  * Trigger anti-cycle à l'INSERT sur recipe_component : le CHECK ne
 --    couvre que l'auto-référence directe (A -> A), pas A -> B -> A.
+--  * Unité de la ligne de facture : invoice_line n'a que qty, sans l'unité
+--    telle qu'imprimée. « 2 CT » et « 12,5 KG » y sont indistinguables, et
+--    price_per_base_unit en dépend entièrement. Tolérable tant qu'un
+--    supplier_product est toujours facturé dans la même unité ; faux dès
+--    qu'un fournisseur alterne colis et kilo. L'extraction capture déjà
+--    raw_unit (models.RawInvoiceLine) : la colonne reste à ajouter.
+--
 --  * Versionner les recettes : si le pâtissier change son grammage,
 --    l'historique de marge devient faux rétroactivement.
 --  * Snapshot de coût daté : recipe_cost() donne le coût AUJOURD'HUI.
