@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gramme
+      POSTGRES_PASSWORD: gramme
+      POSTGRES_DB: gramme
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gramme"]
+      interval: 5s
+      retries: 5
+
+volumes:
+  pgdata:
