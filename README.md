@@ -40,4 +40,4 @@ data/                          factures clients — INTÉGRALEMENT gitignoré
 - Historique de prix append-only : aucun `UPDATE` sur un prix.
 - Rien sous `data/` ne part sur un remote.
 
-Détail des décisions d'architecture : `CLAUDE.md`.
+
