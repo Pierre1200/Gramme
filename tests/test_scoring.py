@@ -11,6 +11,7 @@ import pytest
 
 from gramme.models import Extracted, FieldStatus, RawInvoice, RawInvoiceLine
 from gramme.scoring import (
+    CHAMPS_LIGNE,
     Verdict,
     agreger,
     apparier_lignes,
@@ -242,3 +243,84 @@ def test_le_seuil_ne_change_pas_les_verdicts(seuil):
     rapport = scorer_facture(_facture_attendue(), _facture_obtenue(), seuil_validation=seuil)
     assert rapport.verdicts[Verdict.FAUX] == 0
     assert rapport.verdicts[Verdict.CORRECT] == 9
+
+
+class TestLignesRatees:
+    """Une ligne perdue ou inventée doit peser dans le taux de faux.
+
+    Régression corrigée : elles étaient comptées à côté du taux, qui restait
+    donc flatteur pendant que l'extraction perdait la facture.
+    """
+
+    def _attendue_10_lignes(self) -> TruthInvoice:
+        return _facture_attendue(
+            lines=[
+                TruthLine(
+                    raw_label=f"ARTICLE {i}",
+                    qty=Decimal("1"),
+                    raw_unit="KG",
+                    unit_price_ht=Decimal("10"),
+                    line_total_ht=Decimal("10"),
+                )
+                for i in range(10)
+            ]
+        )
+
+    def _obtenue_n_lignes(self, n: int) -> RawInvoice:
+        return _facture_obtenue(
+            lines=[
+                RawInvoiceLine(
+                    raw_label=f"ARTICLE {i}",
+                    qty=lu(Decimal("1")),
+                    raw_unit=lu("KG"),
+                    unit_price_ht=lu(Decimal("10")),
+                    line_total_ht=lu(Decimal("10")),
+                )
+                for i in range(n)
+            ]
+        )
+
+    def test_perdre_neuf_lignes_sur_dix_ne_peut_pas_paraitre_bon(self):
+        rapport = scorer_facture(self._attendue_10_lignes(), self._obtenue_n_lignes(1))
+        assert len(rapport.lignes_manquantes) == 9
+        assert rapport.taux_faux > 0.5  # avant correction : 11 %
+
+    def test_lignes_hallucinees_penalisees(self):
+        rapport = scorer_facture(self._attendue_10_lignes(), self._obtenue_n_lignes(15))
+        assert len(rapport.lignes_inventees) == 5
+        assert rapport.verdicts[Verdict.FAUX] >= 5 * len(CHAMPS_LIGNE)
+
+    def test_extraction_parfaite_reste_a_zero(self):
+        # Le correctif ne doit pas inventer de faux quand tout va bien.
+        rapport = scorer_facture(self._attendue_10_lignes(), self._obtenue_n_lignes(10))
+        assert rapport.taux_faux == 0.0
+        assert rapport.faux_critiques == 0
+
+    def test_une_ligne_ratee_apparait_dans_les_erreurs(self):
+        rapport = scorer_facture(self._attendue_10_lignes(), self._obtenue_n_lignes(9))
+        motifs = [e.champ for e in rapport.erreurs]
+        assert "ligne manquante" in motifs
+
+
+class TestChampsCritiques:
+    def test_un_prix_faux_est_critique(self):
+        obtenue = _facture_obtenue(
+            lines=[
+                RawInvoiceLine(
+                    raw_label="BEURRE",
+                    qty=lu(Decimal("2")),
+                    raw_unit=lu("KG"),
+                    unit_price_ht=lu(Decimal("8.74")),
+                    line_total_ht=lu(Decimal("16.94")),
+                )
+            ]
+        )
+        rapport = scorer_facture(_facture_attendue(), obtenue)
+        assert rapport.faux_critiques == 1
+
+    def test_un_numero_de_facture_faux_ne_l_est_pas(self):
+        # Rattrapable : il ne part pas dans price_point.
+        obtenue = _facture_obtenue(invoice_number=lu("FA-AUTRE"))
+        rapport = scorer_facture(_facture_attendue(), obtenue)
+        assert rapport.verdicts[Verdict.FAUX] == 1
+        assert rapport.faux_critiques == 0

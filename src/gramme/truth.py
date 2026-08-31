@@ -5,9 +5,11 @@ On n'annote pas un score, on annote un fait. C'est cette asymétrie qui rend la
 mesure honnête — le banc compare une opinion de modèle à une observation
 humaine, pas deux sorties de la même machine.
 
-Le format est celui fixé par COLLECTE.md, avec un ajout : la liste `unreadable`
-(voir `TruthLine`), sans laquelle `None` confond « absent du document » et
-« présent mais illisible ».
+Le format est celui fixé par COLLECTE.md, avec trois ajouts :
+  - `unreadable`, sans quoi `None` confond « absent du document » et « présent
+    mais illisible » (voir `_AvecIllisibles`) ;
+  - `regime`, parce qu'un ticket est en TTC et une facture en HT (voir `Regime`) ;
+  - `raw_unit` sur la ligne, information perdue à jamais si on ne l'annote pas.
 """
 
 from datetime import date
@@ -58,7 +60,37 @@ class Regime(StrEnum):
     TTC = "ttc"
 
 
-class TruthLine(BaseModel):
+class _AvecIllisibles(BaseModel):
+    """Porte la liste des champs illisibles et le garde-fou associé.
+
+    Mutualisé entre la ligne et l'en-tête : la règle est la même aux deux
+    niveaux, et deux copies d'une règle finissent toujours par diverger.
+    """
+
+    # Champs présents sur le papier mais que TU n'as pas réussi à lire.
+    # `None` seul veut dire « le document ne porte pas ce champ » ; nommé ici, il
+    # veut dire « il y est, il est illisible ». Sans cette liste, le banc
+    # pénalise le modèle qui répond correctement UNREADABLE — c'est-à-dire
+    # exactement le comportement que la décision 5 de CLAUDE.md exige de lui.
+    unreadable: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _controler_illisibles(self) -> Self:
+        """Un champ déclaré illisible ne peut pas porter de valeur.
+
+        Garde-fou d'annotation, pas de logique métier : à trois heures du matin
+        sur la quinzième facture, on se trompe. Autant que le fichier refuse de
+        se charger plutôt que de fausser une mesure en silence.
+        """
+        for nom in self.unreadable:
+            if nom not in type(self).model_fields:
+                raise ValueError(f"unreadable nomme un champ inexistant : {nom}")
+            if getattr(self, nom) is not None:
+                raise ValueError(f"{nom} est déclaré illisible mais porte une valeur")
+        return self
+
+
+class TruthLine(_AvecIllisibles):
     """Une ligne telle qu'elle est imprimée sur le papier.
 
     Tous les montants sont optionnels : une ligne peut être partiellement
@@ -88,32 +120,10 @@ class TruthLine(BaseModel):
     pack_qty: Decimal | None = None
     base_unit: str | None = None
 
-    # Champs présents sur le papier mais que TU n'as pas réussi à lire.
-    # `None` seul veut dire « le document ne porte pas ce champ » ; nommé ici, il
-    # veut dire « il y est, il est illisible ». Sans cette liste, le banc
-    # pénalise le modèle qui répond correctement UNREADABLE — c'est-à-dire
-    # exactement le comportement que la décision 5 de CLAUDE.md exige de lui.
-    unreadable: list[str] = Field(default_factory=list)
-
     notes: str | None = None
 
-    @model_validator(mode="after")
-    def _unreadable_nomme_des_champs_vides(self) -> Self:
-        """Un champ déclaré illisible ne peut pas porter de valeur.
 
-        Garde-fou d'annotation, pas de logique métier : à trois heures du matin
-        sur la quinzième facture, on se trompe. Autant que le fichier refuse de
-        se charger plutôt que de fausser une mesure en silence.
-        """
-        for nom in self.unreadable:
-            if nom not in type(self).model_fields:
-                raise ValueError(f"unreadable nomme un champ inexistant : {nom}")
-            if getattr(self, nom) is not None:
-                raise ValueError(f"{nom} est déclaré illisible mais porte une valeur")
-        return self
-
-
-class TruthInvoice(BaseModel):
+class TruthInvoice(_AvecIllisibles):
     """Une facture annotée à la main, dans son intégralité."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -136,22 +146,10 @@ class TruthInvoice(BaseModel):
 
     lines: list[TruthLine] = Field(min_length=1)
 
-    # Même sémantique que sur TruthLine, pour les champs d'en-tête.
-    unreadable: list[str] = Field(default_factory=list)
-
     # Ce qui rend cette facture tordue : remise de pied de page, frais de port,
     # consigne, avoir. Sert à expliquer pourquoi Σ lignes ≠ total_ht sans
     # conclure trop vite que l'extraction a raté une ligne.
     pieges: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def _unreadable_nomme_des_champs_vides(self) -> Self:
-        for nom in self.unreadable:
-            if nom not in type(self).model_fields:
-                raise ValueError(f"unreadable nomme un champ inexistant : {nom}")
-            if getattr(self, nom) is not None:
-                raise ValueError(f"{nom} est déclaré illisible mais porte une valeur")
-        return self
 
 
 def load_truth(

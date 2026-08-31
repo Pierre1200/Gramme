@@ -25,7 +25,8 @@ EXTENSIONS = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".heic", ".webp", ".tif
 # Les photos d'iPhone arrivent souvent en HEIC. On les accepte et on les garde
 # telles quelles, mais rien ne sait encore les lire — ni poppler, ni la plupart
 # des modèles. À convertir au moment de l'extraction, pas ici.
-EXTENSIONS_A_CONVERTIR_PLUS_TARD = frozenset({".heic", ".webp"})
+# (.webp n'y figure pas : il est lu partout, il n'a rien de problématique.)
+EXTENSIONS_A_CONVERTIR_PLUS_TARD = frozenset({".heic"})
 
 
 def empreinte(chemin: Path) -> str:
@@ -93,6 +94,13 @@ def classer(sources: Iterable[Path], destination: Path) -> RapportClassement:
     se fait à l'annotation, quand l'information est sous les yeux.
     """
     destination.mkdir(parents=True, exist_ok=True)
+
+    # Ranger un dossier dans lui-même ferait boucler la copie sur ses propres
+    # sorties. Rien dans la signature ne l'interdit, donc on le refuse ici.
+    sources = list(sources)
+    if any(chemin.resolve().parent == destination.resolve() for chemin in sources):
+        raise ValueError(f"la source est déjà dans {destination}")
+
     connues = empreintes_du_dossier(destination)
     rapport = RapportClassement()
 

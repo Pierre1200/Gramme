@@ -34,9 +34,12 @@ CHAMPS_ENTETE = ("supplier_name", "invoice_number", "invoice_date", "total_ht", 
 CHAMPS_LIGNE = ("qty", "raw_unit", "unit_price_ht", "line_total_ht")
 
 # Ceux dont une erreur corrompt un prix. Les autres (raw_unit, invoice_number)
-# sont utiles mais rattrapables. On les distingue pour le rapport, sans en faire
-# une moyenne pondérée : une moyenne masquerait lequel a cassé.
+# sont utiles mais rattrapables. Comptés à part plutôt que pondérés dans une
+# moyenne : une moyenne masquerait lequel a cassé.
 CHAMPS_CRITIQUES = frozenset({"qty", "unit_price_ht", "line_total_ht", "total_ht", "invoice_date"})
+
+# Combien de champs critiques disparaissent avec une ligne entière.
+_CRITIQUES_PAR_LIGNE = len(CHAMPS_CRITIQUES & set(CHAMPS_LIGNE))
 
 
 class Verdict(StrEnum):
@@ -79,6 +82,10 @@ class RapportFacture:
     # COÛT, pas la JUSTESSE : un champ correct mais peu confiant est juste, il
     # prend juste du temps. Les deux se pilotent séparément.
     a_valider: int = 0
+    # Sous-ensemble des faux qui corrompent un prix. C'est celui-là qui doit
+    # tendre vers zéro en premier : un invoice_number faux se rattrape, un
+    # unit_price_ht faux part dans price_point, qui est append-only.
+    faux_critiques: int = 0
     erreurs: list[Erreur] = field(default_factory=list)
 
     @property
@@ -188,6 +195,8 @@ def scorer_facture(
                 getattr(source_v, champ), champ in source_v.unreadable, extrait
             )
             rapport.verdicts[verdict] += 1
+            if verdict is Verdict.FAUX and champ in CHAMPS_CRITIQUES:
+                rapport.faux_critiques += 1
             if extrait.needs_review(seuil_validation):
                 rapport.a_valider += 1
             if verdict is not Verdict.CORRECT:
@@ -206,9 +215,28 @@ def scorer_facture(
     for i, (ligne_v, ligne_o) in enumerate(paires):
         evaluer(f"ligne[{i}].", CHAMPS_LIGNE, ligne_v, ligne_o)
 
-    rapport.lignes_manquantes.extend(ligne.raw_label for ligne in manquantes)
-    rapport.lignes_inventees.extend(ligne.raw_label for ligne in inventees)
+    # Une ligne entièrement ratée fait disparaître tous ses champs sans qu'aucun
+    # ne parte en validation : c'est la définition même du FAUX dans ce module.
+    # Les compter à côté du taux le rendait aveugle au pire échec possible — un
+    # modèle rendant le seul en-tête affichait un taux flatteur alors qu'il
+    # venait de perdre la facture.
+    for ligne in manquantes:
+        rapport.lignes_manquantes.append(ligne.raw_label)
+        _compter_ligne_entiere(rapport, "ligne manquante", ligne.raw_label, "<absente>")
+    for ligne in inventees:
+        rapport.lignes_inventees.append(ligne.raw_label)
+        _compter_ligne_entiere(rapport, "ligne inventée", "<inexistante>", ligne.raw_label)
+
     return rapport
+
+
+def _compter_ligne_entiere(rapport: RapportFacture, motif: str, attendu: str, obtenu: str) -> None:
+    """Impute à une ligne ratée le poids des champs qu'elle emporte."""
+    rapport.verdicts[Verdict.FAUX] += len(CHAMPS_LIGNE)
+    rapport.faux_critiques += _CRITIQUES_PAR_LIGNE
+    rapport.erreurs.append(
+        Erreur(champ=motif, attendu=attendu, obtenu=obtenu, verdict=Verdict.FAUX)
+    )
 
 
 def _afficher(valeur: object | None, illisible: bool) -> str:
@@ -226,6 +254,7 @@ class Bilan:
     lignes_manquantes: int
     lignes_inventees: int
     a_valider: int
+    faux_critiques: int
     rapports: list[RapportFacture]
 
     @property
@@ -260,5 +289,6 @@ def agreger(rapports: list[RapportFacture]) -> Bilan:
         lignes_manquantes=sum(len(r.lignes_manquantes) for r in rapports),
         lignes_inventees=sum(len(r.lignes_inventees) for r in rapports),
         a_valider=sum(r.a_valider for r in rapports),
+        faux_critiques=sum(r.faux_critiques for r in rapports),
         rapports=rapports,
     )
