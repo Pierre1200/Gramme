@@ -158,9 +158,6 @@ Postgres. Il s'applique à la main, par exemple via une cible `make seed`.
   expert, lui montrer les résultats avant de les montrer au patron.
 - **Question ouverte** : comment arrivent leurs factures (mail, facture
   électronique, papier) ? La réponse décide de la place réelle de la photo.
-- **Hors code, à régler avant tout stage ou alternance chez un cobaye** : la
-  propriété du code. Un logiciel créé par un salarié dans ses fonctions
-  appartient à l'employeur (art. L113-9 CPI).
 
 ## Stack
 
