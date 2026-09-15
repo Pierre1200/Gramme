@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{#
+  Aucun calcul dans ce template (décision 2). Chaque nombre affiché sort tel
+  quel des vues rapport_* ; les filtres ne font que la mise en forme. Les seules
+  comparaisons servent au pluriel et au choix d'une couleur.
+#}
+{% block titre %}Rapport du lundi{% endblock %}
+
+{% block style %}
+  .tuiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tuile {
+    border-radius: var(--rayon); padding: 14px 12px 12px; min-height: 108px;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+  }
+  .tuile__nombre { font-size: 2.4rem; font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+  .tuile__libelle { font-size: .8125rem; font-weight: 700; line-height: 1.2; }
+  .tuile--tomate { background: var(--tomate); color: #fff; box-shadow: 0 14px 28px -16px rgba(228, 87, 46, .9); }
+  .tuile--safran { background: var(--safran-pale); color: var(--safran-texte); }
+  .tuile--encre  { background: var(--encre); color: var(--creme); }
+
+  .plats { display: grid; gap: 12px; }
+  @media (min-width: 680px) { .plats { grid-template-columns: 1fr 1fr; } }
+
+  .plat { position: relative; overflow: hidden; padding: 16px 16px 14px 20px; }
+  .plat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--olive); }
+  .plat--alerte::before    { background: var(--tomate); }
+  .plat--vigilance::before { background: var(--safran); }
+  .plat__haut { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .plat h3 { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.3; }
+  .plat__reste { margin: 12px 0 12px; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; }
+  .plat__montant { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .plat__legende { font-size: .875rem; color: var(--doux); }
+
+  /* Jauge du ratio, sur une échelle de 0 à 100 % : la barre montre le ratio
+     d'aujourd'hui, le repère sombre celui d'il y a six semaines. */
+  .jauge { position: relative; height: 10px; border-radius: 999px; background: var(--piste); }
+  .jauge__barre { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--olive); }
+  .plat--alerte .jauge__barre    { background: var(--tomate); }
+  .plat--vigilance .jauge__barre { background: var(--safran); }
+  .jauge__repere {
+    position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px;
+    border-radius: 2px; background: var(--encre); opacity: .55;
+  }
+  .plat__detail { margin: 10px 0 0; font-size: .8125rem; color: var(--doux); }
+  .plat__detail strong { color: var(--encre); font-weight: 700; }
+
+  .prix-liste { padding: 2px 16px; }
+  .prix {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 0; border-bottom: 1px solid var(--bord);
+  }
+  .prix:last-child { border-bottom: 0; }
+  .prix__nom { margin: 0; font-weight: 700; }
+  .prix__detail { margin: 2px 0 0; font-size: .8125rem; color: var(--doux); }
+
+  .verifs { display: grid; gap: 10px; }
+  .verif { display: flex; gap: 12px; padding: 14px 16px; }
+  .verif p { margin: 0; }
+  .verif__icone {
+    flex: none; width: 38px; height: 38px; border-radius: 12px;
+    display: grid; place-items: center; font-weight: 800; font-size: 1.1rem;
+    background: var(--safran-pale); color: var(--safran-texte);
+  }
+  .verif__titre { font-weight: 700; margin-bottom: 2px !important; }
+  .verif code {
+    font: 600 .8125rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--piste); padding: .15em .45em; border-radius: 6px;
+  }
+{% endblock %}
+
+{% block contenu %}
+{% set r = rapport.resume %}
+
+<section class="entete">
+  <p class="surtitre">Rapport du lundi</p>
+  <h1>Semaine du {{ lundi | jour_mois }}</h1>
+  <p class="sous-titre">Ce qui a bougé sur vos coûts ces six dernières semaines.</p>
+</section>
+
+<section class="tuiles" aria-label="En bref">
+  <div class="tuile tuile--tomate">
+    <span class="tuile__nombre chiffre">{{ r.plats_en_alerte }}</span>
+    <span class="tuile__libelle">plat{{ 's' if r.plats_en_alerte > 1 }} à surveiller</span>
+  </div>
+  <div class="tuile tuile--safran">
+    <span class="tuile__nombre chiffre">{{ r.prix_en_hausse }}</span>
+    <span class="tuile__libelle">prix en hausse</span>
+  </div>
+  <div class="tuile tuile--encre">
+    <span class="tuile__nombre chiffre">{{ r.points_a_verifier }}</span>
+    <span class="tuile__libelle">point{{ 's' if r.points_a_verifier > 1 }} à vérifier</span>
+  </div>
+</section>
+
+<h2 class="titre-section">Vos plats <small>marge par portion</small></h2>
+<div class="plats">
+  {% for m in rapport.marges %}
+  <article class="carte plat plat--{{ m.niveau }}">
+    <div class="plat__haut">
+      <h3>{{ m.recette }}</h3>
+      {% if m.niveau == 'alerte' %}
+        <span class="pastille pastille--tomate chiffre">{{ m.ecart_points | points }}</span>
+      {% elif m.niveau == 'vigilance' %}
+        <span class="pastille pastille--safran chiffre">{{ m.ecart_points | points }}</span>
+      {% else %}
+        <span class="pastille pastille--olive">Stable</span>
+      {% endif %}
+    </div>
+
+    <p class="plat__reste">
+      <span class="plat__montant chiffre">{{ m.marge_portion | euros }}</span>
+      <span class="plat__legende">vous reste, contre {{ m.marge_portion_avant | euros }} il y a 6 semaines</span>
+    </p>
+
+    <div class="jauge" role="img"
+         aria-label="Ratio de {{ m.ratio | pourcent }}, contre {{ m.ratio_avant | pourcent }} il y a six semaines">
+      <span class="jauge__barre" style="width: {{ m.ratio }}%"></span>
+      <span class="jauge__repere" style="left: {{ m.ratio_avant }}%"></span>
+    </div>
+
+    <p class="plat__detail chiffre">
+      Ratio <strong>{{ m.ratio | pourcent }}</strong> (était {{ m.ratio_avant | pourcent }})
+      · coût {{ m.cout_portion | euros }} · vendu {{ m.prix_vente_ttc | euros }} TTC
+    </p>
+  </article>
+  {% else %}
+  <p class="carte vide">Aucun plat enregistré pour l'instant.</p>
+  {% endfor %}
+</div>
+
+<h2 class="titre-section">Les prix qui ont bougé <small>sur 6 semaines</small></h2>
+<div class="carte prix-liste">
+  {% for v in rapport.variations %}
+  <div class="prix">
+    <div>
+      <p class="prix__nom">{{ v.ingredient }}</p>
+      <p class="prix__detail chiffre">{{ v.prix_avant | euros }} → {{ v.prix_apres | euros }} / {{ v.unite }}</p>
+    </div>
+    <span class="pastille {{ 'pastille--tomate' if v.variation_pct > 0 else 'pastille--olive' }} chiffre">
+      {{ v.variation_pct | variation }}
+    </span>
+  </div>
+  {% else %}
+  <p class="vide">Aucun prix n'a bougé de plus de 3 %.</p>
+  {% endfor %}
+</div>
+
+<h2 class="titre-section">À vérifier</h2>
+<div class="verifs">
+  {% for a in rapport.attention %}
+  <article class="carte verif">
+    {% if a.motif == 'libelle_a_confirmer' %}
+      <span class="verif__icone" aria-hidden="true">?</span>
+      <div>
+        <p class="verif__titre">Un produit à confirmer</p>
+        <p><code>{{ a.libelle }}</code></p>
+        <p class="doux">{{ a.fournisseur }} · de quel produit s'agit-il ?</p>
+      </div>
+    {% else %}
+      <span class="verif__icone" aria-hidden="true">≠</span>
+      <div>
+        <p class="verif__titre">Facture {{ a.libelle }} du {{ a.date_facture | date_courte }}</p>
+        <p>Le total ne correspond pas à la somme des lignes : écart de <strong class="chiffre">{{ a.ecart | euros }}</strong>.</p>
+        <p class="doux">{{ a.fournisseur }}</p>
+      </div>
+    {% endif %}
+  </article>
+  {% else %}
+  <p class="carte vide">Rien à vérifier cette semaine.</p>
+  {% endfor %}
+</div>
+
+<p class="note">
+  Exemple de démonstration : chiffres fictifs, calculés par le moteur réel.<br>
+  <a href="/envoyer">Envoyer une facture →</a>
+</p>
+{% endblock %}

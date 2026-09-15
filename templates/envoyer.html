@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{#
+  Règle de la démo : la page dit « reçue », jamais « lue ». La lecture
+  automatique n'existe pas encore ; rien d'illustratif n'est présenté comme
+  fonctionnel.
+#}
+{% block titre %}Envoyer une facture{% endblock %}
+
+{% block style %}
+  .resultat { display: flex; gap: 14px; align-items: flex-start; padding: 18px; margin-bottom: 18px; }
+  .resultat h2 { margin: 0 0 4px; font-size: 1.15rem; }
+  .resultat p { margin: 0 0 4px; }
+  .resultat__icone {
+    flex: none; width: 46px; height: 46px; border-radius: 15px;
+    display: grid; place-items: center; font-size: 1.45rem; font-weight: 800;
+  }
+  .resultat--ok     .resultat__icone { background: var(--olive-pale);  color: var(--olive-texte); }
+  .resultat--doublon .resultat__icone { background: var(--safran-pale); color: var(--safran-texte); }
+  .resultat--erreur .resultat__icone { background: var(--tomate-pale); color: var(--tomate-texte); }
+  .petit { font-size: .8125rem; }
+
+  .envoi { display: grid; gap: 12px; margin: 4px 0 18px; }
+  .envoi form { margin: 0; }
+  .bouton {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; min-height: 60px; padding: 16px 20px; border: 0; border-radius: 20px;
+    font: inherit; font-size: 1.05rem; font-weight: 800; cursor: pointer; text-decoration: none;
+    transition: transform .08s ease;
+  }
+  .bouton:active { transform: scale(.98); }
+  .bouton:focus-within { outline: 3px solid var(--safran); outline-offset: 3px; }
+  .bouton svg { width: 24px; height: 24px; flex: none; }
+  .bouton--principal {
+    flex-direction: column; min-height: 150px; font-size: 1.2rem;
+    background: var(--tomate); color: #fff;
+    box-shadow: 0 18px 34px -18px rgba(228, 87, 46, .95);
+  }
+  .bouton--principal svg { width: 46px; height: 46px; }
+  .bouton--secondaire { background: var(--carte); color: var(--encre); border: 1.5px solid var(--bord); }
+
+  /* Le champ fichier reste dans le label (le toucher ouvre l'appareil photo),
+     mais invisible : display:none l'empêcherait de s'ouvrir sur d'anciens iOS. */
+  .invisible { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
+
+  .rassurance { margin: 0 8px; text-align: center; font-size: .8125rem; color: var(--doux); }
+
+  .en-cours {
+    position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: rgba(255, 247, 237, .9); font-weight: 800; font-size: 1.1rem;
+  }
+{% endblock %}
+
+{% block contenu %}
+<section class="entete">
+  <p class="surtitre">Envoyer une facture</p>
+  <h1>Une photo, c'est tout.</h1>
+  <p class="sous-titre">Prenez la facture en photo, ou choisissez un PDF reçu par mail.</p>
+</section>
+
+{% if etat == 'recue' %}
+  <section class="carte resultat resultat--ok" role="status">
+    <span class="resultat__icone" aria-hidden="true">✓</span>
+    <div>
+      <h2>Facture reçue</h2>
+      <p>Elle est bien enregistrée.</p>
+      <p class="doux petit">Démonstration : la lecture automatique n'est pas encore branchée, la facture est simplement rangée.</p>
+    </div>
+  </section>
+{% elif etat == 'deja_recue' %}
+  <section class="carte resultat resultat--doublon" role="status">
+    <span class="resultat__icone" aria-hidden="true">=</span>
+    <div>
+      <h2>Déjà reçue</h2>
+      <p>Ce fichier a déjà été envoyé : il n'a pas été enregistré une seconde fois.</p>
+    </div>
+  </section>
+{% elif etat == 'format' %}
+  <section class="carte resultat resultat--erreur" role="alert">
+    <span class="resultat__icone" aria-hidden="true">!</span>
+    <div>
+      <h2>Format non pris en charge</h2>
+      <p>Envoyez une photo (JPG, PNG, HEIC) ou un PDF.</p>
+    </div>
+  </section>
+{% elif etat == 'trop_lourd' %}
+  <section class="carte resultat resultat--erreur" role="alert">
+    <span class="resultat__icone" aria-hidden="true">!</span>
+    <div>
+      <h2>Fichier trop lourd</h2>
+      <p>20 Mo maximum : une photo de téléphone en fait bien moins.</p>
+    </div>
+  </section>
+{% elif etat == 'vide' %}
+  <section class="carte resultat resultat--erreur" role="alert">
+    <span class="resultat__icone" aria-hidden="true">!</span>
+    <div>
+      <h2>Aucun fichier reçu</h2>
+      <p>Choisissez une photo ou un PDF, puis réessayez.</p>
+    </div>
+  </section>
+{% endif %}
+
+<div class="envoi">
+  <form action="/envoyer" method="post" enctype="multipart/form-data">
+    <label class="bouton bouton--principal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/>
+        <circle cx="12" cy="13.5" r="3.5"/>
+      </svg>
+      {{ 'Envoyer une autre facture' if etat else 'Prendre en photo' }}
+      <input class="invisible" type="file" name="fichier" accept="image/*" capture="environment" onchange="envoyer(this)">
+    </label>
+    <noscript><button class="bouton bouton--secondaire" type="submit">Envoyer</button></noscript>
+  </form>
+
+  <form action="/envoyer" method="post" enctype="multipart/form-data">
+    <label class="bouton bouton--secondaire">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+        <path d="M14 3v5h5"/>
+      </svg>
+      Choisir un fichier
+      <input class="invisible" type="file" name="fichier" accept="image/*,application/pdf" onchange="envoyer(this)">
+    </label>
+    <noscript><button class="bouton bouton--secondaire" type="submit">Envoyer</button></noscript>
+  </form>
+</div>
+
+<p class="rassurance">La facture reste sur cet ordinateur. Elle n'est ni partagée, ni montrée à un tiers.</p>
+
+<div class="en-cours" id="en-cours" hidden>Envoi en cours…</div>
+
+<script>
+  // Envoi dès qu'un fichier est choisi : pas de second bouton à trouver.
+  function envoyer(champ) {
+    if (!champ.files.length) return;
+    document.getElementById("en-cours").hidden = false;
+    champ.form.submit();
+  }
+</script>
+{% endblock %}
