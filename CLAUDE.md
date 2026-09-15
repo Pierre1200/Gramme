@@ -10,12 +10,14 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (15/09/2026) : fondations écrites et testées, extraction pas commencée.**
+**État actuel (15/09/2026) : fondations et démo écrites et testées, extraction pas commencée.**
 
-- Écrit, 76 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
-  `scripts/classer.py`, schéma SQL (`db/migrations/001_schema.sql`)
+- Écrit, 108 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+  `scripts/classer.py`, schéma SQL (`001_schema.sql`, `002_rapport.sql`)
+- Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
+  `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
 - Pas encore écrit : `scripts/evaluate.py` (appelé par `make eval`), `llm.py`,
-  `extract.py`, `db.py`, `normalize.py`, `report.py`
+  `extract.py`, écriture en base dans `db.py`, `normalize.py`, `report.py`
 - Aucune facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
@@ -101,16 +103,30 @@ en est le complément, en euros : prix de vente HT − coût matière (ratio 33 
 = marge brute 67 %). Le traiteur raisonne en euros, l'hôtel en ratio : le
 rapport doit pouvoir montrer les deux, et les deux se calculent en SQL.
 
-### Trous connus du schéma — migration `002`, avant le seed de la démo
+### Trous connus du schéma
 
-1. **Marge brute en euros** : `recipe_margin` ne renvoie que le ratio. Sans
-   colonne SQL, le template ferait la soustraction et violerait la décision 2.
+Comblés par `002_rapport.sql` (15/09/2026) : marge brute en euros
+(`recipe_margin.marge_brute_ht`, vue `rapport_marges`), commentaire SQL sur
+`selling_price_ttc`, coût à une date donnée (`recipe_cost_at`, dont
+`recipe_cost` est le cas « aujourd'hui »).
+
+Restent ouverts :
+
+1. **Ingrédient sans prix ignoré en silence.** `recipe_cost_at` rattache les
+   prix par jointure interne : un ingrédient sans prix à la date demandée
+   disparaît du total, sans avertissement, et le coût est sous-estimé.
+   Verrouillé par `tests/test_cost.py::TestLimiteConnue`. **À corriger avant de
+   saisir les vraies fiches techniques** : c'est là qu'apparaîtront des
+   ingrédients jamais encore facturés.
 2. **Régime HT/TTC** : n'existe que dans `truth.py`. Un client en franchise de
    TVA ne la récupère pas, son coût réel est le TTC. En V1 (un seul
-   établissement), c'est un réglage du client ; le taux, lui, est porté par
-   la ligne de facture (5,5 % alimentaire, 20 % le reste).
-3. **`selling_price_ttc`** : documenter dans le schéma lui-même que c'est le
-   prix d'une portion.
+   établissement), c'est un réglage du client ; le taux est porté par la ligne
+   de facture (5,5 % alimentaire, 20 % le reste), colonne absente du schéma.
+   **Reporté à l'extraction** : la démo n'en a pas besoin.
+3. **Coproduits.** Jus et zeste d'un même citron, jaunes et blancs d'un même
+   œuf : deux composants valorisés chacun sur leur brut font payer deux fois
+   le même achat. Même famille de problème que la découpe de carcasse
+   ci-dessous. Le seed de démo contourne en ne comptant que le jus.
 
 ### Découpe de carcasse — méthode retenue, paramètres à confirmer
 
@@ -185,7 +201,8 @@ précédente n'est pas finie. Seule exception : la démo, qui avance `db.py`
    (barème écrit : `truth.py`, `scoring.py` ; reste le script lui-même)
 3. `llm.py` — client + instrumentation
 4. `extract.py` — première extraction, itérer sur le prompt
-5. schéma SQL + `db.py` — **avancé pour la démo** : seed et lecture des vues
+5. schéma SQL + `db.py` — **lecture faite pour la démo** (`002_rapport.sql`,
+   `lire_rapport`) ; reste l'écriture des factures extraites
 6. `normalize.py`
 7. `report.py`
 
@@ -204,8 +221,10 @@ chose de concret. Une architecture ne se montre pas.
    appli native. Le fichier passe par `intake.classer()`, il est donc
    réellement reçu et rangé dans `data/raw/`. La page affiche « Facture
    reçue ». **Elle ne prétend jamais que la facture a été lue.**
-2. **Le rapport du lundi.** Sur des plats réels de la carte du cobaye, avec
-   des données fictives et la mention « exemple, chiffres fictifs » visible.
+2. **Le rapport du lundi.** Sur des plats **génériques** (viande, poisson,
+   traiteur, pâtisserie, café), pour montrer la même démo à un restaurant, un
+   traiteur ou un pâtissier. Mention « exemple, chiffres fictifs » visible en
+   permanence.
 
 **Règles de la démo.**
 
@@ -216,8 +235,21 @@ chose de concret. Une architecture ne se montre pas.
 - **Dates du seed relatives à `CURRENT_DATE`**, jamais fixes. `price_drift` ne
   regarde que les 42 derniers jours : un seed daté de septembre renvoie une
   section « ce qui a augmenté » vide en novembre, le jour de la démo.
-- **Le seed attend la migration `002`** (marge en euros, voir « Trous connus du
-  schéma ») : sans elle, la page du rapport devrait calculer.
+- **Base séparée `gramme_demo`**, recréée de zéro par `make demo-db`
+  (migrations, puis seed). Le seed refuse de s'exécuter sur une autre base : un
+  seed qui écrit dans la base principale finirait par écraser des données
+  clients.
+- **Relancer `make demo` le jour J** : il recrée la base et rafraîchit les dates.
+- **Scénario crédible, pas alarmiste** : 2 plats en alerte sur 7, quelques
+  hausses franches, une baisse de saison. Un rapport où tout flambe
+  décrédibilise l'outil. L'alerte porte sur la dérive du ratio (+2 points en
+  6 semaines) ; la tuile d'en-tête ne compte que les alertes.
+- **Visuel coloré, esprit appli, pensé d'abord pour le téléphone** : palette
+  chaude (crème ; tomate = hausse ; safran = vigilance ; olive = stable),
+  onglets en bas, une carte par plat. `web.py` ne calcule rien, ses filtres ne
+  font que de la mise en forme (virgule décimale, signe, pluriel).
+- **Tester sur un vrai téléphone avant chaque démo** : l'émulation mobile d'un
+  navigateur de bureau ne déclenche pas l'appareil photo.
 - Rien d'illustratif n'est présenté comme fonctionnel.
 - **Locale uniquement.** Jamais exposée publiquement avec de vraies factures,
   `data/` reste hors Git. Pour la montrer sur téléphone : serveur sur
@@ -235,18 +267,20 @@ servir la démo : seed et lecture des vues. L'extraction (étapes 2 à 4) garde
 son ordre et reste gardée par le banc d'essai. Quand de vraies factures
 seront annotées, elles remplaceront le seed.
 
-**Structure proposée, à discuter avant d'écrire du code :**
+**Structure en place :**
 
 ```
-src/gramme/db.py        connexion, lecture des vues SQL
-src/gramme/web.py       FastAPI : GET/POST /envoyer, GET /rapport
-templates/              envoyer.html, rapport.html (Jinja2)
-db/seed/demo.sql        données fictives sur les plats du cobaye
+db/migrations/002_rapport.sql  recipe_cost_at, marge en euros, vues rapport_*
+db/seed/demo.sql               chiffres fictifs datés d'aujourd'hui, gramme_demo seule
+src/gramme/config.py           adresses des deux bases, lues dans .env
+src/gramme/db.py               lire_rapport() : un seul instantané, aucun calcul
+src/gramme/web.py              FastAPI : GET /rapport, GET et POST /envoyer
+templates/                     base.html, rapport.html, envoyer.html
 ```
 
 Le seed vit dans `db/seed/`, **pas** dans `db/migrations/` : tout ce qui est
 dans `migrations/` est appliqué automatiquement au premier démarrage de
-Postgres. Il s'applique à la main, par exemple via une cible `make seed`.
+Postgres, y compris sur la base principale.
 
 ## Contexte terrain
 
@@ -272,11 +306,10 @@ Postgres. Il s'applique à la main, par exemple via une cible `make seed`.
 - ruff (lint + format), pytest, pre-commit
 - Modèle par défaut : MiniMax-M3, base_url `https://api.minimax.io/v1`
 
-Commandes : `make up`, `make test`, `make lint`, `make eval`
+Commandes : `make up`, `make test`, `make lint`, `make eval`, `make demo-db`, `make demo`
 
 Démo : FastAPI, Jinja2, uvicorn, et **python-multipart** (requis par FastAPI
-pour recevoir des fichiers). Dépendances validées le 15/09/2026, pas encore
-installées.
+pour recevoir des fichiers). Validées et installées le 15/09/2026.
 
 ## Interdits
 
