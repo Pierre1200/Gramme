@@ -10,7 +10,15 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel : phase de collecte de données. Aucun code applicatif écrit.**
+**État actuel (15/09/2026) : fondations écrites et testées, extraction pas commencée.**
+
+- Écrit, 76 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+  `scripts/classer.py`, schéma SQL (`db/migrations/001_schema.sql`)
+- Pas encore écrit : `scripts/evaluate.py` (appelé par `make eval`), `llm.py`,
+  `extract.py`, `db.py`, `normalize.py`, `report.py`
+- Aucune facture annotée dans `data/truth/`, aucun appel à un modèle
+- Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
+  déjà ses marges à la main (fiches techniques et factures)
 
 ## Comment je veux travailler
 
@@ -91,6 +99,69 @@ précédente n'est pas finie.
 L'étape 2 avant l'étape 4 est délibérée : définir ce que « réussir » veut
 dire avant d'avoir un résultat à défendre.
 
+## Démo : piste parallèle, décidée le 15/09/2026
+
+**Pourquoi.** Un établissement cobaye a validé l'idée mais veut voir quelque
+chose de concret. Une architecture ne se montre pas.
+
+**Périmètre : deux pages web, rien de plus.**
+
+1. **Envoyer une facture.** `<input type="file" accept="image/*"
+   capture="environment">` : ouvre l'appareil photo sur un téléphone, sans
+   appli native. Le fichier passe par `intake.classer()`, il est donc
+   réellement reçu et rangé dans `data/raw/`. La page affiche « Facture
+   reçue ». **Elle ne prétend jamais que la facture a été lue.**
+2. **Le rapport du lundi.** Sur des plats réels de la carte du cobaye, avec
+   des données fictives et la mention « exemple, chiffres fictifs » visible.
+
+**Règles de la démo.**
+
+- **Données fictives, calcul réel.** Les chiffres fictifs sont insérés en
+  base par un script de seed, et le rapport est produit par les fonctions
+  SQL existantes (`recipe_cost`, `recipe_margin`, `price_drift`). Aucun
+  montant en dur dans un template : la décision 2 s'applique aussi ici.
+- Rien d'illustratif n'est présenté comme fonctionnel.
+- **Locale uniquement.** Jamais exposée publiquement avec de vraies factures,
+  `data/` reste hors Git. Pour la montrer sur téléphone : serveur sur
+  `0.0.0.0`, même Wi-Fi ou partage de connexion.
+- Ce n'est pas le début du tableau de bord ni d'une appli mobile : ils
+  restent hors périmètre V1.
+
+**Conséquence sur l'ordre de construction.** `db.py` (étape 5) avance pour
+servir la démo : seed et lecture des vues. L'extraction (étapes 2 à 4) garde
+son ordre et reste gardée par le banc d'essai. Quand de vraies factures
+seront annotées, elles remplaceront le seed.
+
+**Structure proposée, à discuter avant d'écrire du code :**
+
+```
+src/gramme/db.py        connexion, lecture des vues SQL
+src/gramme/web.py       FastAPI : GET/POST /envoyer, GET /rapport
+templates/              envoyer.html, rapport.html (Jinja2)
+db/seed/demo.sql        données fictives sur les plats du cobaye
+```
+
+Le seed vit dans `db/seed/`, **pas** dans `db/migrations/` : tout ce qui est
+dans `migrations/` est appliqué automatiquement au premier démarrage de
+Postgres. Il s'applique à la main, par exemple via une cible `make seed`.
+
+## Contexte terrain
+
+- **Traiteur** (auto-entrepreneur, un seul fournisseur, surtout de la
+  paella) : probablement en franchise de TVA, à confirmer. Si oui, son coût
+  réel est le TTC. Un seul fournisseur = bonne série temporelle, mais aucun
+  test du rapprochement de libellés entre fournisseurs.
+- **Hôtel-restaurant** (~200 couverts, boucherie interne, viande achetée
+  directement aux éleveurs) : **un employé calcule déjà les marges à la
+  main.** Ses calculs sont la vérité terrain du calcul de coût : comparer le
+  rapport à ses chiffres. Il vit l'outil comme une menace. Le traiter en
+  expert, lui montrer les résultats avant de les montrer au patron.
+- **Question ouverte** : comment arrivent leurs factures (mail, facture
+  électronique, papier) ? La réponse décide de la place réelle de la photo.
+- **Hors code, à régler avant tout stage ou alternance chez un cobaye** : la
+  propriété du code. Un logiciel créé par un salarié dans ses fonctions
+  appartient à l'employeur (art. L113-9 CPI).
+
 ## Stack
 
 - Python 3.12, `uv` (jamais pip/poetry directement)
@@ -100,6 +171,10 @@ dire avant d'avoir un résultat à défendre.
 - Modèle par défaut : MiniMax-M3, base_url `https://api.minimax.io/v1`
 
 Commandes : `make up`, `make test`, `make lint`, `make eval`
+
+Démo : FastAPI, Jinja2, uvicorn, et **python-multipart** (requis par FastAPI
+pour recevoir des fichiers). Dépendances validées le 15/09/2026, pas encore
+installées.
 
 ## Interdits
 
@@ -119,3 +194,7 @@ Hors périmètre pour l'instant : dashboard, gestion de stock, inventaires,
 connexion caisse, multi-établissements, appli mobile, authentification
 multi-utilisateurs, prévision de production. Si je dérive vers ça,
 rappelle-le-moi.
+
+La démo en deux pages (voir plus haut) est une exception bornée et datée,
+pas une ouverture du périmètre : la page d'envoi n'est ni une appli mobile
+ni l'amorce d'un tableau de bord.
