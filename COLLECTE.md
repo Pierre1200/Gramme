@@ -2,6 +2,10 @@
 
 *20/08/2026. Phase en cours : collecte de données réelles. Pas de code d'extraction.*
 
+> **Ce document contient des données de prospection** — noms d'établissements
+> réels et relations personnelles. À retirer avant toute publication du dépôt
+> (voir `AUDIT.md`).
+
 Le `Makefile` prévoit déjà `make eval` (banc d'essai extraction vs `data/truth/`).
 Ce document décrit comment remplir ce dossier. **C'est le jeu de vérité qui dira si
 l'extraction marche — donc il se constitue avant, pas après.**

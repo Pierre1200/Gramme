@@ -10,9 +10,10 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (15/09/2026) : fondations et démo écrites et testées, extraction pas commencée.**
+**État actuel (20/09/2026) : fondations et démo écrites, auditées et testées ;
+extraction pas commencée.**
 
-- Écrit, 108 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 110 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `scripts/classer.py`, schéma SQL (`001_schema.sql`, `002_rapport.sql`)
 - Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
@@ -23,6 +24,8 @@ d'architecture Python l'est moins.
   déjà ses marges à la main (fiches techniques et factures)
 - Ouvert : la méthode de coût des carcasses (voir « Découpe de carcasse »),
   paramètres à confirmer sur les premières factures de l'hôtel-restaurant
+- Documentation : `README.md` (vitrine), `JOURNAL.md` (les décisions et leurs
+  raisons), `AUDIT.md` (audit du 20/09/2026), `COLLECTE.md` (jeu de vérité)
 
 ## Comment je veux travailler
 
@@ -318,9 +321,19 @@ pour recevoir des fichiers). Validées et installées le 15/09/2026.
   `data/`, signale-le immédiatement. Les plaquettes commerciales
   `Gramme_*.pdf|docx` à la racine sont connues et ne sont pas des factures.
 - Pas de secrets en dur. Tout passe par `.env`.
+- Le hook pre-commit doit rester installé (`uv run pre-commit install`) : c'est
+  lui qui refuse les gros fichiers et les clés privées avant un commit. Il est
+  resté absent pendant un mois sans que personne ne le remarque.
 - Pas de dépendance ajoutée sans me demander d'abord.
 - Ne crée pas de fichiers « au cas où ». Si ça ne sert pas au rapport
   hebdomadaire, ça n'existe pas encore.
+
+## Avant de rendre le dépôt public
+
+Le dépôt est privé aujourd'hui. Ce qu'il faut retirer ou remplacer avant toute
+publication est listé dans `AUDIT.md`, section « Avant de rendre le dépôt
+public » : données de prospection de `COLLECTE.md`, contexte commercial des deux
+établissements cobayes, identifiants de développement du `docker-compose.yml`.
 
 ## Rappel de cadrage
 
