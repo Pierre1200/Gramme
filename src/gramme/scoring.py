@@ -1,23 +1,14 @@
 """Le barème : ce que « réussir » veut dire, défini avant d'avoir un résultat.
 
-Écrit avant `extract.py` délibérément (CLAUDE.md, ordre de construction). Une
-fois qu'un modèle a produit une sortie, on est tenté de rationaliser — « bon,
-la remise sur une ligne séparée, c'est acceptable ». Le barème tranche avant.
+Écrit avant `extract.py` délibérément : une fois la sortie d'un modèle sous les
+yeux, on rationalise.
 
-Principe central : toutes les erreurs ne coûtent pas la même chose.
-
-    Un montant faux entre dans price_point, qui est append-only : la donnée est
-    corrompue pour toujours. Une abstention coûte trente secondes de relecture
-    humaine. Les compter ensemble dans une « exactitude » unique masque
-    exactement ce qu'on a besoin de savoir.
-
-D'où la règle qui gouverne tout ce module :
-
-    Une réponse qui n'atteint pas l'humain et qui n'est pas juste est un FAUX.
-
-C'est pourquoi répondre ABSENT sur un champ illisible compte comme faux :
-`Extracted.needs_review()` renvoie False sur ABSENT, donc rien ne part en
-validation et la valeur est perdue en silence.
+Toutes les erreurs ne coûtent pas la même chose. Un montant faux entre dans
+`price_point`, qui est append-only : la donnée est corrompue pour toujours ; une
+abstention coûte trente secondes de relecture. D'où la règle du module : une
+réponse qui n'atteint pas l'humain et qui n'est pas juste est un FAUX. Répondre
+ABSENT sur un champ illisible en est un — `needs_review()` renvoie False, donc
+rien ne part en validation.
 """
 
 from collections import Counter
@@ -57,10 +48,8 @@ class Verdict(StrEnum):
 
 @dataclass(frozen=True)
 class Erreur:
-    """Une divergence, gardée pour être relue à l'œil.
-
-    Un taux sans exemples n'est pas exploitable : c'est en lisant « attendu
-    8.74, obtenu 8.47 » qu'on comprend que le modèle inverse des chiffres.
+    """Une divergence gardée pour relecture : un taux sans exemples ne se
+    diagnostique pas.
     """
 
     champ: str
@@ -120,10 +109,8 @@ def _memes_valeurs(attendu: object, obtenu: object) -> bool:
 def comparer_champ(attendu: object | None, illisible: bool, obtenu: Extracted) -> Verdict:
     """Applique la matrice vérité × réponse.
 
-    Trois états attendus (valeur / illisible / absent) contre trois réponses
-    possibles (READ / UNREADABLE / ABSENT). Les neuf cas sont explicites
-    ci-dessous plutôt que condensés : c'est le cœur du barème, il doit se
-    relire sans effort dans six mois.
+    Les neuf cas (valeur / illisible / absent × READ / UNREADABLE / ABSENT) sont
+    écrits explicitement plutôt que condensés : c'est le cœur du barème.
     """
     if illisible:
         # Le champ est sur le papier, mais on n'a pas su le lire.
@@ -152,17 +139,12 @@ def apparier_lignes(
 ) -> tuple[list[tuple[TruthLine, RawInvoiceLine]], list[TruthLine], list[RawInvoiceLine]]:
     """Apparie sur le libellé normalisé, jamais sur la position.
 
-    Comparer la ligne 5 à la ligne 5 est un piège : si le modèle en rate une,
-    tout décale et une erreur unique en produit vingt. Le score devient un
-    mensonge, et il ment dans le sens pessimiste — on part chasser un bug qui
-    n'existe pas.
+    En positionnel, une ligne ratée décale tout et une erreur unique en produit
+    vingt. Le retrait au fur et à mesure (`pop`) gère les libellés en double,
+    courants sur une facture.
 
-    Le retrait au fur et à mesure (`pop`) gère les libellés en double, courants
-    sur une facture (deux lignes du même article à deux prix).
-
-    Biais connu : un libellé mal lu compte double, en manquante ET en inventée.
-    À réexaminer sur les factures de Damien — si ça arrive souvent, il faudra
-    un appariement approché.
+    Biais connu : un libellé mal lu compte double, manquant ET inventé. À
+    réexaminer sur les vraies factures.
     """
     restantes = list(obtenues)
     paires: list[tuple[TruthLine, RawInvoiceLine]] = []
@@ -188,7 +170,12 @@ def scorer_facture(
     """Compare une extraction à son annotation, champ par champ."""
     rapport = RapportFacture(source_file=attendue.source_file, quality=attendue.quality)
 
-    def evaluer(prefixe: str, champs: tuple[str, ...], source_v, source_o) -> None:
+    def evaluer(
+        prefixe: str,
+        champs: tuple[str, ...],
+        source_v: TruthInvoice | TruthLine,
+        source_o: RawInvoice | RawInvoiceLine,
+    ) -> None:
         for champ in champs:
             extrait: Extracted = getattr(source_o, champ)
             verdict = comparer_champ(
@@ -269,12 +256,10 @@ class Bilan:
 
 
 def agreger(rapports: list[RapportFacture]) -> Bilan:
-    """Somme les rapports.
+    """Somme les rapports, ventilés par qualité de source.
 
-    La ventilation par qualité n'est pas cosmétique : 95 % sur des PDF et 40 %
-    sur des photos, ce n'est pas la même nouvelle qu'un 80 % uniforme. Le
-    premier cas dit « le pipeline marche, l'entrée est mauvaise » ; le second
-    dit « le pipeline est médiocre partout ».
+    95 % sur des PDF et 40 % sur des photos ne dit pas la même chose qu'un 80 %
+    uniforme : un score global masque d'où vient l'échec.
     """
     total: Counter[Verdict] = Counter()
     par_qualite: dict[SourceQuality, Counter[Verdict]] = {}

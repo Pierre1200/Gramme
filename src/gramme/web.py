@@ -31,8 +31,7 @@ from starlette.datastructures import UploadFile
 
 from gramme.config import get_settings
 from gramme.db import Rapport, lire_rapport
-from gramme.intake import EXTENSIONS, RapportClassement, classer
-from gramme.truth import DOSSIER_RAW
+from gramme.intake import DOSSIER_RAW, EXTENSIONS, RapportClassement, classer
 
 RACINE = Path(__file__).resolve().parents[2]
 
@@ -159,6 +158,13 @@ async def recevoir(request: Request, destination: Annotated[Path, Depends(dossie
     Le formulaire est lu à la main plutôt que déclaré en paramètre : un envoi
     sans fichier doit afficher une page lisible, pas une erreur JSON 422.
     """
+    # Refus AVANT de lire le corps : sans ce contrôle, Starlette écrit d'abord
+    # le fichier entier sur disque, et un envoi de plusieurs gigaoctets remplit
+    # le disque avant d'être refusé.
+    annonce = request.headers.get("content-length")
+    if annonce is not None and annonce.isdigit() and int(annonce) > TAILLE_MAX:
+        return _page_envoi(request, etat="trop_lourd", statut=413)
+
     formulaire = await request.form()
     fichier = formulaire.get("fichier")
     if not isinstance(fichier, UploadFile) or not fichier.filename:
