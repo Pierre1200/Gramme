@@ -6,7 +6,10 @@ services:
       POSTGRES_PASSWORD: gramme
       POSTGRES_DB: gramme
     ports:
-      - "5433:5432"
+      # Lié à la boucle locale : sans cette adresse, Postgres écoute sur toutes
+      # les interfaces. Pendant `make demo` sur un partage de connexion,
+      # n'importe qui sur ce réseau atteindrait la base avec gramme/gramme.
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
