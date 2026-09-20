@@ -13,6 +13,12 @@ import psycopg
 from psycopg.rows import class_row
 
 
+class BaseInjoignable(RuntimeError):
+    """La base ne répond pas. Distinguée d'une autre panne pour que les tests
+    puissent s'ignorer sans masquer un vrai défaut.
+    """
+
+
 @dataclass(frozen=True)
 class Resume:
     """Les trois tuiles de l'en-tête."""
@@ -96,14 +102,20 @@ _SQL_ATTENTION = """
 def lire_rapport(url: str) -> Rapport:
     """Lit tout le rapport sur une connexion, dans une seule transaction.
 
-    En REPEATABLE READ, les quatre requêtes voient le même instantané de la
-    base. Sans ça, un prix inséré entre deux requêtes pourrait afficher
-    « 2 plats à surveiller » au-dessus d'une liste qui en montre trois.
-
-    `url` est passé explicitement : la démo lit `gramme_demo`, le vrai rapport
-    lira la base principale, et ce module n'a pas à savoir laquelle.
+    En REPEATABLE READ, les quatre requêtes voient le même instantané : sinon
+    l'en-tête pourrait annoncer « 2 plats à surveiller » au-dessus d'une liste
+    qui en montre trois. `url` est passé explicitement : la démo lit
+    `gramme_demo`, le vrai rapport lira la base principale.
     """
-    with psycopg.connect(url) as connexion:
+    try:
+        # Sans délai, une base éteinte fige la page au lieu d'afficher l'erreur.
+        connexion = psycopg.connect(url, connect_timeout=5)
+    except psycopg.OperationalError as e:
+        raise BaseInjoignable(
+            "base injoignable : lancer `make up`, puis `make demo-db` pour la démo"
+        ) from e
+
+    with connexion:
         connexion.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
 
         with connexion.cursor(row_factory=class_row(Resume)) as cur:

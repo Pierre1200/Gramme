@@ -1,6 +1,6 @@
 """Range des documents dans data/raw/ en écartant les doublons.
 
-    uv run python scripts/classer.py ~/Downloads/factures_damien
+    uv run python scripts/classer.py ~/Downloads/factures_recues
 
 CLI mince : toute la logique est dans `gramme.intake`, pour être testable sans
 lancer le script.
@@ -10,8 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from gramme.intake import classer
-from gramme.truth import DOSSIER_RAW
+from gramme.intake import DOSSIER_RAW, classer
 
 
 def main() -> int:
