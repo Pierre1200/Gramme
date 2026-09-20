@@ -49,7 +49,7 @@ class TestClasser:
     def test_doublon_ecarte(self, tmp_path):
         source, raw = tmp_path / "recu", tmp_path / "raw"
         ecrire(raw, "2026-08-12_metro.jpg", b"contenu")
-        # Damien renvoie la même photo sous un autre nom.
+        # Le client renvoie la même photo sous un autre nom.
         ecrire(source, "IMG_4821.jpg", b"contenu")
 
         rapport = classer(source.iterdir(), raw)

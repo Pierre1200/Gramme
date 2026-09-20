@@ -8,18 +8,17 @@ On vérifie la cohérence entre sections, pas les chiffres du seed : ceux-là
 peuvent être retouchés sans que le code soit faux.
 """
 
-import psycopg
 import pytest
 
 from gramme.config import get_settings
-from gramme.db import lire_rapport
+from gramme.db import BaseInjoignable, lire_rapport
 
 
 @pytest.fixture(scope="module")
 def rapport():
     try:
         return lire_rapport(get_settings().demo_database_url)
-    except psycopg.OperationalError:
+    except BaseInjoignable:
         pytest.skip("gramme_demo injoignable : lancer `make up` puis `make demo-db`")
 
 

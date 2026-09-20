@@ -127,6 +127,18 @@ class TestEnvoi:
         assert reponse.status_code == 413
         assert not raw.exists()
 
+    def test_taille_annoncee_refusee_avant_de_lire_le_corps(self, client, raw, monkeypatch):
+        # Le refus doit tomber sur l'en-tête content-length : sinon Starlette a
+        # déjà écrit le fichier sur disque quand on le rejette.
+        monkeypatch.setattr(web, "TAILLE_MAX", 10)
+        reponse = client.post(
+            "/envoyer",
+            content=b"x" * 50,
+            headers={"content-type": "application/octet-stream", "content-length": "50"},
+        )
+        assert reponse.status_code == 413
+        assert not raw.exists()
+
     def test_nom_de_fichier_malveillant_reste_dans_le_dossier(self, client, raw, tmp_path):
         envoyer(client, "../../evasion.jpg")
         assert [f.name for f in raw.iterdir()] == ["evasion.jpg"]

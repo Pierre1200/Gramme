@@ -7,11 +7,13 @@ reconstruit à partir des autres.
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from gramme.models import (
+    INVOICE_TOTAL_TOLERANCE,
     ArithmeticCheck,
     Extracted,
     FieldStatus,
@@ -116,3 +118,13 @@ class TestRecoupementFacture:
     def test_facture_sans_ligne_refusee(self):
         with pytest.raises(ValidationError):
             facture("219.00", [])
+
+
+def test_la_tolerance_sql_suit_la_tolerance_python():
+    """La vue `rapport_attention` réécrit la tolérance en dur.
+
+    Les deux valeurs doivent bouger ensemble : ce test casse si l'une change
+    sans l'autre.
+    """
+    sql = Path("db/migrations/002_rapport.sql").read_text(encoding="utf-8")
+    assert f"> {INVOICE_TOTAL_TOLERANCE}" in sql
