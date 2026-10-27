@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Où atterrissent les documents reçus. `data/` est intégralement gitignoré.
-DOSSIER_RAW = Path("data/raw")
+RAW_DIR = Path("data/raw")
 
 # Ce qu'une facture peut être. Tout le reste (.DS_Store, .txt, .zip) est ignoré
 # en silence plutôt que refusé : on vide un dossier de téléchargement entier.
@@ -22,59 +22,59 @@ EXTENSIONS = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".heic", ".webp", ".tif
 
 # Accepté et conservé tel quel, mais illisible par poppler et par la plupart
 # des modèles : à convertir au moment de l'extraction, jamais à l'entrée.
-A_CONVERTIR = frozenset({".heic"})
+NEEDS_CONVERSION = frozenset({".heic"})
 
 
-def empreinte(chemin: Path) -> str:
+def fingerprint(path: Path) -> str:
     """SHA-256 du contenu, lu par blocs : un scan 300 dpi pèse des dizaines de Mo."""
     digest = hashlib.sha256()
-    with chemin.open("rb") as f:
-        while bloc := f.read(65536):
-            digest.update(bloc)
+    with path.open("rb") as handle:
+        while block := handle.read(65536):
+            digest.update(block)
     return digest.hexdigest()
 
 
-def empreintes_du_dossier(dossier: Path) -> dict[str, Path]:
+def fingerprints_in(directory: Path) -> dict[str, Path]:
     """Index empreinte → fichier, recalculé à chaque appel.
 
     Pas d'index sur disque : il se désynchroniserait au premier fichier déplacé
     à la main, et un index faux est pire que pas d'index.
     """
     return {
-        empreinte(f): f
-        for f in sorted(dossier.iterdir())
-        if f.is_file() and f.suffix.lower() in EXTENSIONS
+        fingerprint(item): item
+        for item in sorted(directory.iterdir())
+        if item.is_file() and item.suffix.lower() in EXTENSIONS
     }
 
 
-def _nom_libre(destination: Path, nom: str) -> Path:
+def _free_name(destination: Path, name: str) -> Path:
     """Nom disponible, sans jamais écraser.
 
     Deux IMG_0001.JPG d'appareils différents ne sont pas des doublons : leurs
     empreintes diffèrent, il faut garder les deux.
     """
-    cible = destination / nom
-    if not cible.exists():
-        return cible
-    tige, suffixe = Path(nom).stem, Path(nom).suffix
-    for n in range(2, 1000):
-        cible = destination / f"{tige}_{n}{suffixe}"
-        if not cible.exists():
-            return cible
-    raise RuntimeError(f"impossible de trouver un nom libre pour {nom}")
+    target = destination / name
+    if not target.exists():
+        return target
+    stem, suffix = Path(name).stem, Path(name).suffix
+    for index in range(2, 1000):
+        target = destination / f"{stem}_{index}{suffix}"
+        if not target.exists():
+            return target
+    raise RuntimeError(f"impossible de trouver un nom libre pour {name}")
 
 
 @dataclass
-class RapportClassement:
-    copies: list[Path] = field(default_factory=list)
+class FilingReport:
+    stored: list[Path] = field(default_factory=list)
     # (fichier proposé, fichier déjà présent qui a la même empreinte)
-    doublons: list[tuple[Path, Path]] = field(default_factory=list)
-    ignores: list[Path] = field(default_factory=list)
-    # Copiés, mais dans un format qu'aucun outil ne sait encore lire.
-    a_convertir: list[Path] = field(default_factory=list)
+    duplicates: list[tuple[Path, Path]] = field(default_factory=list)
+    ignored: list[Path] = field(default_factory=list)
+    # Rangés, mais dans un format qu'aucun outil ne sait encore lire.
+    to_convert: list[Path] = field(default_factory=list)
 
 
-def classer(sources: Iterable[Path], destination: Path) -> RapportClassement:
+def store(sources: Iterable[Path], destination: Path) -> FilingReport:
     """Copie dans `destination` les documents encore absents.
 
     Ne renomme pas selon la convention de COLLECTE.md
@@ -87,34 +87,34 @@ def classer(sources: Iterable[Path], destination: Path) -> RapportClassement:
     # Ranger un dossier dans lui-même ferait boucler la copie sur ses propres
     # sorties. Rien dans la signature ne l'interdit, donc on le refuse ici.
     sources = list(sources)
-    if any(chemin.resolve().parent == destination.resolve() for chemin in sources):
+    if any(path.resolve().parent == destination.resolve() for path in sources):
         raise ValueError(f"la source est déjà dans {destination}")
 
-    connues = empreintes_du_dossier(destination)
-    rapport = RapportClassement()
+    known = fingerprints_in(destination)
+    report = FilingReport()
 
     for source in sorted(sources):
         if not source.is_file():
             continue
         if source.suffix.lower() not in EXTENSIONS:
-            rapport.ignores.append(source)
+            report.ignored.append(source)
             continue
 
-        signature = empreinte(source)
-        if signature in connues:
-            rapport.doublons.append((source, connues[signature]))
+        signature = fingerprint(source)
+        if signature in known:
+            report.duplicates.append((source, known[signature]))
             continue
 
-        cible = _nom_libre(destination, source.name)
+        target = _free_name(destination, source.name)
         # copy2 préserve les dates du fichier d'origine : c'est souvent le seul
         # indice de quand la photo a été prise.
-        shutil.copy2(source, cible)
+        shutil.copy2(source, target)
 
         # L'empreinte est enregistrée immédiatement : deux copies identiques
         # présentes dans le même lot source doivent être vues comme doublons.
-        connues[signature] = cible
-        rapport.copies.append(cible)
-        if cible.suffix.lower() in A_CONVERTIR:
-            rapport.a_convertir.append(cible)
+        known[signature] = target
+        report.stored.append(target)
+        if target.suffix.lower() in NEEDS_CONVERSION:
+            report.to_convert.append(target)
 
-    return rapport
+    return report

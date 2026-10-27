@@ -1,13 +1,24 @@
-.PHONY: up down db-reset test lint eval demo-db demo
+.DEFAULT_GOAL := help
+.PHONY: help up down db-reset test lint eval demo-db demo
 
-up:        ; docker compose up -d
-down:      ; docker compose down
-db-reset:  ; docker compose down -v && docker compose up -d
-test:      ; uv run pytest
+help:      ## Liste les commandes disponibles
+	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sort | \
+	awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}'
+
+up:        ## Démarre PostgreSQL
+	docker compose up -d
+down:      ## Arrête PostgreSQL
+	docker compose down
+db-reset:  ## DÉTRUIT la base principale et rejoue les migrations
+	docker compose down -v && docker compose up -d
+test:      ## Lance les tests
+	uv run pytest
 # format avant check : ruff check signale des lignes trop longues que le
 # formateur aurait repliées, et le && arrêtait tout avant qu'il passe.
-lint:      ; uv run ruff format . && uv run ruff check --fix .
-eval:      ; uv run python scripts/evaluate.py
+lint:      ## Formate puis vérifie le code
+	uv run ruff format . && uv run ruff check --fix .
+eval:      ## Banc d'essai : extraction comparée au jeu de vérité
+	uv run python scripts/evaluate.py
 
 # ---------------------------------------------------------------------------
 #  Démo — base séparée, chiffres fictifs, calcul réel (CLAUDE.md, « Démo »)
@@ -16,10 +27,7 @@ eval:      ; uv run python scripts/evaluate.py
 PSQL = docker compose exec -T -e PGOPTIONS=--client-min-messages=warning db \
        psql -U gramme -v ON_ERROR_STOP=1 -q
 
-# Recrée gramme_demo de zéro : toutes les migrations, puis le seed fictif.
-# Jamais la base principale. Relancer le jour de la démo : les prix sont datés
-# par rapport à aujourd'hui, et price_drift ne regarde que les 42 derniers jours.
-demo-db:
+demo-db:   ## Recrée gramme_demo avec des chiffres fictifs datés d'aujourd'hui
 	@docker compose up -d --wait > /dev/null
 	@$(PSQL) -d gramme -c "DROP DATABASE IF EXISTS gramme_demo WITH (FORCE)" -c "CREATE DATABASE gramme_demo"
 	@for f in db/migrations/*.sql db/seed/demo.sql; do \
@@ -27,8 +35,7 @@ demo-db:
 	done
 	@echo "gramme_demo recréée : migrations + chiffres fictifs datés d'aujourd'hui"
 
-# Base de démo fraîche, puis serveur ouvert au réseau local pour le téléphone.
-demo: demo-db
+demo: demo-db  ## Base de démo fraîche, puis les deux pages sur le réseau local
 	@echo ""
 	@echo "  Sur cet ordinateur : http://localhost:8000"
 	@ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null); \

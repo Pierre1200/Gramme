@@ -164,3 +164,53 @@ raison d'être, et le prénom d'un client a été retiré du code.
 
 `setup_projet.md` a été supprimé : il décrivait une arborescence devenue fausse
 et faisait doublon avec le README.
+
+## 27/10/2026 — Conventions de code, méthode Git, intégration continue
+
+Le dépôt vivait encore en direct sur `main`, sans intégration continue, avec des
+identifiants français. Trois chantiers menés ensemble, parce qu'ils se tiennent.
+
+**Identifiants en anglais, commentaires en français.** Le moment était le bon :
+3 500 lignes et 110 tests comme filet. Après l'extraction, le même chantier
+aurait coûté le double, sur du code neuf encore non couvert.
+
+Deux exceptions assumées, pour des termes sans équivalent anglais exact : les
+valeurs `"ht"` et `"ttc"`, qui sont les mentions portées sur les documents
+eux-mêmes, et les niveaux `ok` / `vigilance` / `alerte`, affichés tels quels.
+`"manuscrit"` est devenu `"handwritten"` : celui-là est notre propre catégorie,
+pas une mention imprimée. Le format d'annotation pouvait changer sans douleur —
+`data/truth/` est encore vide.
+
+**Ce que le renommage a cassé, et que les tests ont attrapé.** Une colonne
+oubliée : `variation_pct` n'avait pas été renommée en `change_pct` alors que
+`db.py` l'attendait. Et la base principale portait encore les anciennes vues,
+créées en septembre : il a fallu rejouer les migrations. Les deux ont été
+signalés par la suite de tests en moins d'une minute — c'est exactement ce pour
+quoi le filet existe.
+
+**Preuve que rien n'a bougé sur le fond** : les chiffres des trois vues du
+rapport ont été capturés avant le chantier et comparés après. Identiques au mot
+près, pour les sept plats et les huit variations de prix.
+
+**Intégration continue.** Un job `backend` : lint, format, puis les tests avec
+un vrai PostgreSQL. Sans la base, 14 tests s'ignorent et la CI validerait un
+moteur de calcul jamais exécuté.
+
+**Méthode Git.** Une branche par fonctionnalité depuis `dev`, Pull Request en
+français, commits en anglais au format conventionnel, squash and merge. Deux
+choses à savoir, apprises à la lecture d'un historique qui avait dérivé : une
+règle écrite ne tient que si les réglages du dépôt l'imposent — tant que la
+fusion classique reste autorisée, le bouton est là — et mettre une branche à
+jour par `git merge dev` laisse un commit de fusion que le squash final
+n'efface pas. Le rebase est la seule façon de garder l'historique linéaire.
+
+**Le banc d'essai, étape 2 terminée.** `bench.py` et `scripts/evaluate.py`
+complètent le barème. `make eval` sert dès maintenant, sans aucune facture : il
+valide les annotations et dit ce qu'il manque pour atteindre les critères de
+sortie de COLLECTE.md. Deux décisions dedans : le volume seul ne suffit pas —
+dix PDF propres du même jour laissent le corpus « non prêt », faute de série
+temporelle et de document difficile — et un document non extrait est compté à
+part, car le confondre avec une mauvaise lecture ferait chuter le taux pour une
+raison étrangère au modèle. Les extractions sont relues dans
+`data/extractions/`, un fichier par document : rejouer le banc après un
+changement de barème ne rappelle pas le modèle.

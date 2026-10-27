@@ -1,6 +1,6 @@
 """Lecture du rapport en base.
 
-Uniquement des SELECT sur les vues `rapport_*` (db/migrations/002_rapport.sql).
+Uniquement des SELECT sur les vues `report_*` (db/migrations/002_rapport.sql).
 Aucun calcul ici : montants, ratios et écarts arrivent déjà calculés par
 Postgres (décision 2). Ce module ne fait que les transporter jusqu'à la page.
 """
@@ -13,93 +13,93 @@ import psycopg
 from psycopg.rows import class_row
 
 
-class BaseInjoignable(RuntimeError):
+class DatabaseUnreachable(RuntimeError):
     """La base ne répond pas. Distinguée d'une autre panne pour que les tests
     puissent s'ignorer sans masquer un vrai défaut.
     """
 
 
 @dataclass(frozen=True)
-class Resume:
+class Summary:
     """Les trois tuiles de l'en-tête."""
 
-    plats_en_alerte: int
-    prix_en_hausse: int
-    points_a_verifier: int
+    dishes_on_alert: int
+    prices_up: int
+    items_to_check: int
 
 
 @dataclass(frozen=True)
-class MargePlat:
-    recette_id: int
-    recette: str
+class DishMargin:
+    recipe_id: int
+    recipe: str
     portions: int | None
-    prix_vente_ttc: Decimal
-    prix_vente_ht: Decimal
-    cout_portion: Decimal
-    marge_portion: Decimal
-    marge_portion_avant: Decimal
+    selling_price_incl_vat: Decimal
+    selling_price: Decimal
+    cost_per_portion: Decimal
+    margin_per_portion: Decimal
+    margin_per_portion_before: Decimal
     ratio: Decimal
-    ratio_avant: Decimal
-    ecart_points: Decimal
+    ratio_before: Decimal
+    drift_points: Decimal
     # 'ok', 'vigilance' ou 'alerte' — décidé en SQL, la page ne compare rien.
-    niveau: str
+    level: str
 
 
 @dataclass(frozen=True)
-class Variation:
+class PriceChange:
     ingredient_id: int
     ingredient: str
-    prix_avant: Decimal
-    prix_apres: Decimal
-    unite: str  # 'kg', 'L' ou 'pièce'
-    variation_pct: Decimal
+    price_before: Decimal
+    price_after: Decimal
+    unit: str  # 'kg', 'L' ou 'pièce'
+    change_pct: Decimal
 
 
 @dataclass(frozen=True)
-class PointAttention:
-    motif: str  # 'libelle_a_confirmer' ou 'total_incoherent'
-    libelle: str
-    fournisseur: str
-    date_facture: date | None
-    ecart: Decimal | None
+class Flag:
+    reason: str  # 'label_to_confirm' ou 'total_mismatch'
+    label: str
+    supplier: str
+    invoice_date: date | None
+    gap: Decimal | None
 
 
 @dataclass(frozen=True)
-class Rapport:
-    resume: Resume
-    marges: list[MargePlat]
-    variations: list[Variation]
-    attention: list[PointAttention]
+class Report:
+    summary: Summary
+    margins: list[DishMargin]
+    price_changes: list[PriceChange]
+    flags: list[Flag]
 
 
 # Colonnes nommées explicitement plutôt que SELECT * : si une vue gagne une
 # colonne, la page continue de fonctionner au lieu de casser sur un argument
 # inattendu du constructeur. Les ORDER BY sont répétés ici : l'ordre d'une vue
 # n'est pas garanti une fois qu'on la relit depuis l'extérieur.
-_SQL_RESUME = """
-    SELECT plats_en_alerte, prix_en_hausse, points_a_verifier
-    FROM rapport_resume
+_SUMMARY_SQL = """
+    SELECT dishes_on_alert, prices_up, items_to_check
+    FROM report_summary
 """
-_SQL_MARGES = """
-    SELECT recette_id, recette, portions, prix_vente_ttc, prix_vente_ht,
-           cout_portion, marge_portion, marge_portion_avant,
-           ratio, ratio_avant, ecart_points, niveau
-    FROM rapport_marges
-    ORDER BY ecart_points DESC, recette
+_MARGINS_SQL = """
+    SELECT recipe_id, recipe, portions, selling_price_incl_vat, selling_price,
+           cost_per_portion, margin_per_portion, margin_per_portion_before,
+           ratio, ratio_before, drift_points, level
+    FROM report_margins
+    ORDER BY drift_points DESC, recipe
 """
-_SQL_VARIATIONS = """
-    SELECT ingredient_id, ingredient, prix_avant, prix_apres, unite, variation_pct
-    FROM rapport_variations
-    ORDER BY variation_pct DESC, ingredient
+_PRICE_CHANGES_SQL = """
+    SELECT ingredient_id, ingredient, price_before, price_after, unit, change_pct
+    FROM report_price_changes
+    ORDER BY change_pct DESC, ingredient
 """
-_SQL_ATTENTION = """
-    SELECT motif, libelle, fournisseur, date_facture, ecart
-    FROM rapport_attention
-    ORDER BY motif, libelle
+_FLAGS_SQL = """
+    SELECT reason, label, supplier, invoice_date, gap
+    FROM report_flags
+    ORDER BY reason, label
 """
 
 
-def lire_rapport(url: str) -> Rapport:
+def read_report(url: str) -> Report:
     """Lit tout le rapport sur une connexion, dans une seule transaction.
 
     En REPEATABLE READ, les quatre requêtes voient le même instantané : sinon
@@ -109,25 +109,25 @@ def lire_rapport(url: str) -> Rapport:
     """
     try:
         # Sans délai, une base éteinte fige la page au lieu d'afficher l'erreur.
-        connexion = psycopg.connect(url, connect_timeout=5)
+        connection = psycopg.connect(url, connect_timeout=5)
     except psycopg.OperationalError as e:
-        raise BaseInjoignable(
+        raise DatabaseUnreachable(
             "base injoignable : lancer `make up`, puis `make demo-db` pour la démo"
         ) from e
 
-    with connexion:
-        connexion.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+    with connection:
+        connection.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
 
-        with connexion.cursor(row_factory=class_row(Resume)) as cur:
-            resume = cur.execute(_SQL_RESUME).fetchone()
-        if resume is None:  # la vue renvoie toujours une ligne ; garde-fou
-            raise RuntimeError("rapport_resume n'a renvoyé aucune ligne")
+        with connection.cursor(row_factory=class_row(Summary)) as cur:
+            summary = cur.execute(_SUMMARY_SQL).fetchone()
+        if summary is None:  # la vue renvoie toujours une ligne ; garde-fou
+            raise RuntimeError("report_summary n'a renvoyé aucune ligne")
 
-        with connexion.cursor(row_factory=class_row(MargePlat)) as cur:
-            marges = cur.execute(_SQL_MARGES).fetchall()
-        with connexion.cursor(row_factory=class_row(Variation)) as cur:
-            variations = cur.execute(_SQL_VARIATIONS).fetchall()
-        with connexion.cursor(row_factory=class_row(PointAttention)) as cur:
-            attention = cur.execute(_SQL_ATTENTION).fetchall()
+        with connection.cursor(row_factory=class_row(DishMargin)) as cur:
+            margins = cur.execute(_MARGINS_SQL).fetchall()
+        with connection.cursor(row_factory=class_row(PriceChange)) as cur:
+            price_changes = cur.execute(_PRICE_CHANGES_SQL).fetchall()
+        with connection.cursor(row_factory=class_row(Flag)) as cur:
+            flags = cur.execute(_FLAGS_SQL).fetchall()
 
-    return Rapport(resume=resume, marges=marges, variations=variations, attention=attention)
+    return Report(summary=summary, margins=margins, price_changes=price_changes, flags=flags)

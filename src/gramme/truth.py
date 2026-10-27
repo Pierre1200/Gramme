@@ -5,7 +5,7 @@ n'annote pas un score, on annote un fait — c'est cette asymétrie qui rend la
 mesure honnête.
 
 Format fixé par COLLECTE.md, avec trois ajouts : `unreadable` (sans quoi `None`
-confond « absent » et « illisible »), `regime` (un ticket est en TTC, une
+confond « absent » et « illisible »), `vat_basis` (un ticket est en TTC, une
 facture en HT) et `raw_unit` sur la ligne.
 """
 
@@ -17,19 +17,19 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# DOSSIER_RAW appartient à l'entrée des documents, pas à l'annotation : il est
+# RAW_DIR appartient à l'entrée des documents, pas à l'annotation : il est
 # réexporté ici pour les appelants qui ne connaissent que ce module.
-from gramme.intake import DOSSIER_RAW
+from gramme.intake import RAW_DIR
 
-DOSSIER_TRUTH = Path("data/truth")
+TRUTH_DIR = Path("data/truth")
 
 __all__ = [
-    "DOSSIER_RAW",
-    "DOSSIER_TRUTH",
-    "Regime",
+    "RAW_DIR",
+    "TRUTH_DIR",
     "SourceQuality",
     "TruthInvoice",
     "TruthLine",
+    "VatBasis",
     "load_truth",
 ]
 
@@ -44,28 +44,31 @@ class SourceQuality(StrEnum):
     PDF = "pdf"  # export propre du fournisseur
     SCAN = "scan"  # scanné à plat, lisible
     PHOTO = "photo"  # téléphone, de biais, froissé
-    MANUSCRIT = "manuscrit"  # bon de livraison écrit à la main
+    HANDWRITTEN = "handwritten"  # bon de livraison écrit à la main
 
 
-class Regime(StrEnum):
-    """Les montants du document sont-ils HT ou TTC ?
+class VatBasis(StrEnum):
+    """Les montants du document sont-ils hors taxes ou toutes taxes comprises ?
 
     Une facture fournisseur est en HT, un ticket en TTC, et un auto-entrepreneur
     en franchise ne récupère pas la TVA : son coût réel EST le TTC. On annote ce
     qui est imprimé ; la conversion appartient à `normalize.py`.
+
+    Les valeurs restent « ht » et « ttc » : ce sont les mentions portées sur les
+    documents eux-mêmes, pas une catégorie que nous aurions inventée.
     """
 
-    HT = "ht"
-    TTC = "ttc"
+    EXCLUDING = "ht"
+    INCLUDING = "ttc"
 
 
-class _AvecIllisibles(BaseModel):
+class _WithUnreadable(BaseModel):
     """Porte la liste des champs illisibles et le garde-fou associé.
 
     Mutualisé entre la ligne et l'en-tête : deux copies d'une règle divergent.
     """
 
-    # Champs présents sur le papier mais que TU n'as pas réussi à lire.
+    # Champs présents sur le papier mais que l'annotateur n'a pas réussi à lire.
     # `None` seul veut dire « le document ne porte pas ce champ » ; nommé ici, il
     # veut dire « il y est, il est illisible ». Sans cette liste, le banc
     # pénalise le modèle qui répond correctement UNREADABLE — c'est-à-dire
@@ -73,27 +76,26 @@ class _AvecIllisibles(BaseModel):
     unreadable: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _controler_illisibles(self) -> Self:
+    def _check_unreadable(self) -> Self:
         """Un champ déclaré illisible ne peut pas porter de valeur.
 
         Garde-fou d'annotation : mieux vaut un fichier qui refuse de se charger
         qu'une mesure faussée en silence.
         """
-        for nom in self.unreadable:
-            if nom not in type(self).model_fields:
-                raise ValueError(f"unreadable nomme un champ inexistant : {nom}")
-            if getattr(self, nom) is not None:
-                raise ValueError(f"{nom} est déclaré illisible mais porte une valeur")
+        for name in self.unreadable:
+            if name not in type(self).model_fields:
+                raise ValueError(f"unreadable nomme un champ inexistant : {name}")
+            if getattr(self, name) is not None:
+                raise ValueError(f"{name} est déclaré illisible mais porte une valeur")
         return self
 
 
-class TruthLine(_AvecIllisibles):
+class TruthLine(_WithUnreadable):
     """Une ligne telle qu'elle est imprimée sur le papier.
 
     Tous les montants sont optionnels : une ligne peut être partiellement
-    illisible sans cesser d'exister. Seul `raw_label` est obligatoire — si tu ne
-    peux pas lire le libellé, tu n'as pas une ligne douteuse, tu n'as pas de
-    ligne, et elle n'a rien à faire dans le jeu de vérité.
+    illisible sans cesser d'exister. Seul `raw_label` est obligatoire — sans
+    libellé lisible il n'y a pas une ligne douteuse, il n'y a pas de ligne.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -120,7 +122,7 @@ class TruthLine(_AvecIllisibles):
     notes: str | None = None
 
 
-class TruthInvoice(_AvecIllisibles):
+class TruthInvoice(_WithUnreadable):
     """Une facture annotée à la main, dans son intégralité."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -129,7 +131,7 @@ class TruthInvoice(_AvecIllisibles):
     # annotation orpheline est une annotation qu'on ne peut plus relire.
     source_file: str = Field(min_length=1)
     quality: SourceQuality
-    regime: Regime = Regime.HT
+    vat_basis: VatBasis = VatBasis.EXCLUDING
 
     supplier_name: str | None = None
     invoice_number: str | None = None
@@ -146,34 +148,33 @@ class TruthInvoice(_AvecIllisibles):
     # Ce qui rend cette facture tordue : remise de pied de page, frais de port,
     # consigne, avoir. Sert à expliquer pourquoi Σ lignes ≠ total_ht sans
     # conclure trop vite que l'extraction a raté une ligne.
-    pieges: list[str] = Field(default_factory=list)
+    pitfalls: list[str] = Field(default_factory=list)
 
 
 def load_truth(
-    dossier: Path = DOSSIER_TRUTH,
-    racine_raw: Path | None = DOSSIER_RAW,
+    directory: Path = TRUTH_DIR,
+    raw_root: Path | None = RAW_DIR,
 ) -> list[TruthInvoice]:
     """Charge et valide tout le jeu de vérité, en nommant le fichier fautif.
 
     Échoue bruyamment : une annotation invalide contamine toutes les mesures qui
-    en dépendent. `racine_raw=None` désactive la vérification du document
-    source, pour les tests sans fichiers sur disque.
+    en dépendent. `raw_root=None` désactive la vérification du document source,
+    pour les tests sans fichiers sur disque.
     """
-    fichiers = sorted(dossier.glob("*.json"))
-    if not fichiers:
-        raise FileNotFoundError(f"aucune annotation dans {dossier}")
+    files = sorted(directory.glob("*.json"))
+    if not files:
+        raise FileNotFoundError(f"aucune annotation dans {directory}")
 
     annotations: list[TruthInvoice] = []
-    for fichier in fichiers:
+    for file in files:
         try:
-            annotation = TruthInvoice.model_validate_json(fichier.read_text(encoding="utf-8"))
+            annotation = TruthInvoice.model_validate_json(file.read_text(encoding="utf-8"))
         except ValueError as e:
-            raise ValueError(f"{fichier} : annotation invalide\n{e}") from e
+            raise ValueError(f"{file} : annotation invalide\n{e}") from e
 
-        if racine_raw is not None and not (racine_raw / annotation.source_file).exists():
+        if raw_root is not None and not (raw_root / annotation.source_file).exists():
             raise FileNotFoundError(
-                f"{fichier} : le document source est introuvable "
-                f"({racine_raw / annotation.source_file})"
+                f"{file} : le document source est introuvable ({raw_root / annotation.source_file})"
             )
         annotations.append(annotation)
 

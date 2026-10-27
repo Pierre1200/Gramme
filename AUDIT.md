@@ -41,7 +41,7 @@ Aucune fuite de donnée client. `110 tests` au vert, linter propre.
 
 | # | Constat | Statut |
 |---|---|---|
-| C1 | `DOSSIER_RAW` était défini dans le module d'annotation alors que c'est une notion d'entrée ; deux appelants importaient un chemin d'entrée depuis `truth.py`. | **Corrigé** — déplacé dans `intake.py`, réexporté pour les appelants existants |
+| C1 | `RAW_DIR` (alors `DOSSIER_RAW`) était défini dans le module d'annotation alors que c'est une notion d'entrée ; deux appelants importaient un chemin d'entrée depuis `truth.py`. | **Corrigé** — déplacé dans `intake.py`, réexporté pour les appelants existants |
 | C2 | La tolérance de 0,05 € existait en double, en Python et en dur dans une vue SQL, sans rien pour empêcher la dérive. | **Corrigé** — un test compare les deux valeurs |
 | C3 | Deux styles de modèles coexistent : Pydantic pour les contrats d'extraction, dataclasses pour les lignes lues en base. | **Accepté** — le choix est justifié (validation d'entrée contre transport de données), désormais expliqué dans le README |
 | C4 | `setup_projet.md` décrivait une arborescence fausse et doublait le README. | **Corrigé** — supprimé, conservé dans l'historique Git |
@@ -53,8 +53,8 @@ Aucune fuite de donnée client. `110 tests` au vert, linter propre.
 |---|---|---|
 | K1 | Huit docstrings racontaient une histoire au lieu de dire leur raison d'être, dont un en-tête de module de 21 lignes. | **Corrigé** — ramenées à 1 à 3 lignes, le « pourquoi » conservé |
 | K2 | Le prénom d'un client apparaissait dans trois fichiers. | **Corrigé** |
-| K4 | `EXTENSIONS_A_CONVERTIR_PLUS_TARD` : nom à rallonge. | **Corrigé** — `A_CONVERTIR` |
-| K6 | La connexion à la base n'avait pas de délai d'attente : une base éteinte figeait la page au lieu d'afficher une erreur. | **Corrigé** — délai de 5 s et exception dédiée `BaseInjoignable` |
+| K4 | `EXTENSIONS_A_CONVERTIR_PLUS_TARD` : nom à rallonge. | **Corrigé** — devenu `NEEDS_CONVERSION` au renommage du 27/10 |
+| K6 | La connexion à la base n'avait pas de délai d'attente : une base éteinte figeait la page au lieu d'afficher une erreur. | **Corrigé** — délai de 5 s et exception dédiée `DatabaseUnreachable` |
 | K7 | `make test` affichait « 94 passed, 14 skipped » sans dire pourquoi : on pouvait croire à un succès complet. | **Corrigé** — les raisons des tests ignorés s'affichent |
 
 ## Dépendances
@@ -94,6 +94,10 @@ publication :
 - [ ] Vérifier une dernière fois qu'aucun document n'a été ajouté hors `data/`.
 
 ## Vérifications passées
+
+Depuis le 27/10, une intégration continue (`.github/workflows/ci.yml`, job
+`backend`) rejoue lint, format et les 110 tests avec un vrai PostgreSQL à chaque
+poussée : les vérifications ci-dessous ne dépendent plus d'une exécution locale.
 
 ```
 make test     110 tests, aucun échec

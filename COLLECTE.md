@@ -58,7 +58,7 @@ data/
 {
   "source_file": "2026-08-12_transgourmet_001.pdf",
   "quality": "photo",
-  "regime": "ht",
+  "vat_basis": "ht",
   "supplier_name": "Transgourmet",
   "invoice_number": "FA2026-88412",
   "invoice_date": "2026-08-12",
@@ -77,7 +77,7 @@ data/
       "notes": "colisage 10x500g = 5 kg par colis, non explicite sur la ligne"
     }
   ],
-  "pieges": [
+  "pitfalls": [
     "remise de pied de page -2% appliquée après le total lignes",
     "frais de port 12,50 € sur une ligne sans quantité"
   ]
@@ -108,12 +108,14 @@ pénaliser reviendrait à lui apprendre à deviner.
 Ces cas-là valent de l'or : ce sont eux qui doivent partir en file de validation
 humaine plutôt que d'être devinés (`FieldStatus.UNREADABLE` dans `models.py`).
 
-### `regime` : HT ou TTC
+### `vat_basis` : HT ou TTC
 
 Une facture fournisseur est en HT, un ticket de caisse en TTC. Et un
 auto-entrepreneur en franchise en base **ne récupère pas la TVA** — son coût réel
 est le TTC. Annote ce qui est imprimé, sans jamais convertir, et dis dans `regime`
 de quoi il s'agit. Se tromper ici fausse tous les coûts de 5,5 à 20 %, en silence.
+
+`quality` vaut `pdf`, `scan`, `photo` ou `handwritten`.
 
 ### Vérifier une annotation
 
