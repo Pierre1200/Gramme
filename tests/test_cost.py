@@ -19,202 +19,202 @@ from gramme.config import get_settings
 @pytest.fixture
 def cur():
     try:
-        connexion = psycopg.connect(get_settings().database_url, connect_timeout=2)
+        connection = psycopg.connect(get_settings().database_url, connect_timeout=2)
     except psycopg.OperationalError:
         pytest.skip("Postgres injoignable : lancer `make up`")
-    with connexion:
-        with connexion.cursor() as curseur:
-            yield curseur
-        connexion.rollback()  # rien ne survit au test
+    with connection:
+        with connection.cursor() as cursor:
+            yield cursor
+        connection.rollback()  # rien ne survit au test
 
 
-def inserer(cur, sql: str, *params) -> int:
+def insert(cur, sql: str, *params) -> int:
     cur.execute(sql + " RETURNING id", params)
     return cur.fetchone()[0]
 
 
-def ingredient_au_prix(cur, nom: str, prix_par_gramme: str, il_y_a_jours: int = 0) -> int:
+def ingredient_priced_at(cur, name: str, price_per_gram: str, days_ago: int = 0) -> int:
     """Crée un ingrédient, son produit fournisseur confirmé et un relevé de prix."""
-    fournisseur = inserer(cur, "INSERT INTO supplier (name) VALUES ('test')")
-    ingredient = inserer(cur, "INSERT INTO ingredient (name, base_unit) VALUES (%s, 'g')", nom)
-    inserer(
+    supplier = insert(cur, "INSERT INTO supplier (name) VALUES ('test')")
+    ingredient = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES (%s, 'g')", name)
+    insert(
         cur,
         "INSERT INTO supplier_product (supplier_id, raw_label, ingredient_id, status)"
         " VALUES (%s, %s, %s, 'confirmed')",
-        fournisseur,
-        nom.upper(),
+        supplier,
+        name.upper(),
         ingredient,
     )
     # L'identifiant de l'INGRÉDIENT, pas celui du produit fournisseur. Les deux
     # coïncident sur une base neuve puis divergent : les séquences Postgres ne
     # sont pas annulées par un ROLLBACK. Ce bug a fait passer des tests par hasard.
-    ajouter_prix(cur, ingredient, prix_par_gramme, il_y_a_jours)
+    add_price(cur, ingredient, price_per_gram, days_ago)
     return ingredient
 
 
-def ajouter_prix(cur, ingredient: int, prix_par_gramme: str, il_y_a_jours: int) -> None:
+def add_price(cur, ingredient: int, price_per_gram: str, days_ago: int) -> None:
     """Ajoute un relevé sur le produit fournisseur de cet ingrédient."""
     cur.execute(
         "INSERT INTO price_point (supplier_product_id, observed_on, price_per_base_unit)"
         " SELECT id, CURRENT_DATE - %s, %s FROM supplier_product WHERE ingredient_id = %s",
-        (il_y_a_jours, Decimal(prix_par_gramme), ingredient),
+        (days_ago, Decimal(price_per_gram), ingredient),
     )
 
 
-def recette(
-    cur, nom: str, rendement: int = 1, portions: int | None = None, prix: str | None = None
+def recipe(
+    cur, name: str, yield_qty: int = 1, portions: int | None = None, price: str | None = None
 ) -> int:
-    return inserer(
+    return insert(
         cur,
         "INSERT INTO recipe (name, yield_qty, yield_unit, is_sellable, portions,"
         " selling_price_ttc, vat_rate) VALUES (%s, %s, 'g', %s, %s, %s, 0.100)",
-        nom,
-        rendement,
-        prix is not None,
+        name,
+        yield_qty,
+        price is not None,
         portions,
-        prix,
+        price,
     )
 
 
-def composant(cur, parent: int, qty: int, *, ingredient=None, enfant=None, rendement="1.0") -> None:
+def component(cur, parent: int, qty: int, *, ingredient=None, child=None, ratio="1.0") -> None:
     cur.execute(
         "INSERT INTO recipe_component (parent_recipe_id, ingredient_id, child_recipe_id,"
         " qty, unit, yield_ratio) VALUES (%s, %s, %s, %s, 'g', %s)",
-        (parent, ingredient, enfant, qty, Decimal(rendement)),
+        (parent, ingredient, child, qty, Decimal(ratio)),
     )
 
 
-def cout(cur, recette_id: int, il_y_a_jours: int | None = None) -> Decimal:
-    if il_y_a_jours is None:
-        cur.execute("SELECT recipe_cost(%s)", (recette_id,))
+def cost(cur, recipe_id: int, days_ago: int | None = None) -> Decimal:
+    if days_ago is None:
+        cur.execute("SELECT recipe_cost(%s)", (recipe_id,))
     else:
-        cur.execute("SELECT recipe_cost_at(%s, CURRENT_DATE - %s)", (recette_id, il_y_a_jours))
+        cur.execute("SELECT recipe_cost_at(%s, CURRENT_DATE - %s)", (recipe_id, days_ago))
     return cur.fetchone()[0].quantize(Decimal("0.01"))
 
 
-class TestCoutDeRecette:
-    def test_rendement_calcule_sur_le_brut(self, cur):
+class TestRecipeCost:
+    def test_the_yield_ratio_is_applied_to_the_raw_quantity(self, cur):
         # 2 250 g de gambas décortiquées à rendement 0,50 = 4 500 g achetés.
-        gambas = ingredient_au_prix(cur, "gambas", "0.0168")
-        paella = recette(cur, "paella")
-        composant(cur, paella, 2250, ingredient=gambas, rendement="0.50")
-        assert cout(cur, paella) == Decimal("75.60")
+        prawns = ingredient_priced_at(cur, "gambas", "0.0168")
+        paella = recipe(cur, "paella")
+        component(cur, paella, 2250, ingredient=prawns, ratio="0.50")
+        assert cost(cur, paella) == Decimal("75.60")
 
-    def test_propagation_dans_une_sous_recette(self, cur):
+    def test_the_cost_flows_through_a_sub_recipe(self, cur):
         # La tarte utilise 400 g d'une pâte dont le batch fait 1 000 g : elle
         # porte 40 % du coût du batch.
-        beurre = ingredient_au_prix(cur, "beurre", "0.008")
-        pate = recette(cur, "pâte", rendement=1000)
-        composant(cur, pate, 500, ingredient=beurre)  # batch : 4,00 €
-        tarte = recette(cur, "tarte")
-        composant(cur, tarte, 400, enfant=pate)
-        assert cout(cur, tarte) == Decimal("1.60")
+        butter = ingredient_priced_at(cur, "beurre", "0.008")
+        pastry = recipe(cur, "pâte", yield_qty=1000)
+        component(cur, pastry, 500, ingredient=butter)  # batch : 4,00 €
+        tart = recipe(cur, "tarte")
+        component(cur, tart, 400, child=pastry)
+        assert cost(cur, tart) == Decimal("1.60")
 
-    def test_cout_du_jour_egal_cout_a_la_date_du_jour(self, cur):
-        beurre = ingredient_au_prix(cur, "beurre", "0.008")
-        plat = recette(cur, "plat")
-        composant(cur, plat, 100, ingredient=beurre)
-        cur.execute("SELECT recipe_cost(%s) = recipe_cost_at(%s, CURRENT_DATE)", (plat, plat))
+    def test_todays_cost_equals_the_cost_at_todays_date(self, cur):
+        butter = ingredient_priced_at(cur, "beurre", "0.008")
+        dish = recipe(cur, "plat")
+        component(cur, dish, 100, ingredient=butter)
+        cur.execute("SELECT recipe_cost(%s) = recipe_cost_at(%s, CURRENT_DATE)", (dish, dish))
         assert cur.fetchone()[0] is True
 
 
-class TestCoutAUneDate:
-    def test_lit_le_prix_en_vigueur_a_cette_date(self, cur):
-        beurre = ingredient_au_prix(cur, "beurre", "0.00742", il_y_a_jours=42)
-        ajouter_prix(cur, beurre, "0.00876", il_y_a_jours=3)
-        plat = recette(cur, "croissants")
-        composant(cur, plat, 1000, ingredient=beurre)
-        assert cout(cur, plat, il_y_a_jours=42) == Decimal("7.42")
-        assert cout(cur, plat) == Decimal("8.76")
+class TestCostAtADate:
+    def test_it_reads_the_price_in_force_at_that_date(self, cur):
+        butter = ingredient_priced_at(cur, "beurre", "0.00742", days_ago=42)
+        add_price(cur, butter, "0.00876", days_ago=3)
+        dish = recipe(cur, "croissants")
+        component(cur, dish, 1000, ingredient=butter)
+        assert cost(cur, dish, days_ago=42) == Decimal("7.42")
+        assert cost(cur, dish) == Decimal("8.76")
 
-    def test_ignore_les_prix_posterieurs(self, cur):
-        beurre = ingredient_au_prix(cur, "beurre", "0.008", il_y_a_jours=10)
-        plat = recette(cur, "plat")
-        composant(cur, plat, 1000, ingredient=beurre)
-        assert cout(cur, plat, il_y_a_jours=42) == Decimal("0.00")
+    def test_it_ignores_later_prices(self, cur):
+        butter = ingredient_priced_at(cur, "beurre", "0.008", days_ago=10)
+        dish = recipe(cur, "plat")
+        component(cur, dish, 1000, ingredient=butter)
+        assert cost(cur, dish, days_ago=42) == Decimal("0.00")
 
 
-class TestLimiteConnue:
-    def test_ingredient_sans_prix_disparait_en_silence(self, cur):
+class TestKnownLimit:
+    def test_an_ingredient_without_a_price_vanishes_silently(self, cur):
         """Verrouille un défaut ACTUEL, documenté dans CLAUDE.md.
 
         La jointure interne fait disparaître un ingrédient sans prix : le coût
         est sous-estimé sans aucun avertissement. Le jour où c'est corrigé, ce
         test doit casser et être réécrit — c'est voulu.
         """
-        beurre = ingredient_au_prix(cur, "beurre", "0.008")
-        sans_prix = inserer(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
-        plat = recette(cur, "plat")
-        composant(cur, plat, 1000, ingredient=beurre)
-        composant(cur, plat, 1, ingredient=sans_prix)
-        assert cout(cur, plat) == Decimal("8.00")  # le safran n'est pas compté
+        butter = ingredient_priced_at(cur, "beurre", "0.008")
+        unpriced = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
+        dish = recipe(cur, "plat")
+        component(cur, dish, 1000, ingredient=butter)
+        component(cur, dish, 1, ingredient=unpriced)
+        assert cost(cur, dish) == Decimal("8.00")  # le safran n'est pas compté
 
 
-class TestVuesDuRapport:
-    def test_marge_brute_en_euros(self, cur):
+class TestReportViews:
+    def test_the_gross_margin_in_euros(self, cur):
         # 12 € TTC à 10 % = 10,91 € HT ; coût 3,60 € par part -> 7,31 €.
-        riz = ingredient_au_prix(cur, "riz", "0.0036")
-        paella = recette(cur, "paella", portions=1, prix="12.00")
-        composant(cur, paella, 1000, ingredient=riz)
-        cur.execute("SELECT marge_brute_ht FROM recipe_margin WHERE id = %s", (paella,))
+        rice = ingredient_priced_at(cur, "riz", "0.0036")
+        paella = recipe(cur, "paella", portions=1, price="12.00")
+        component(cur, paella, 1000, ingredient=rice)
+        cur.execute("SELECT gross_margin_ht FROM recipe_margin WHERE id = %s", (paella,))
         assert cur.fetchone()[0] == Decimal("7.31")
 
-    def test_derive_du_ratio_sur_six_semaines(self, cur):
-        beurre = ingredient_au_prix(cur, "beurre", "0.00742", il_y_a_jours=42)
-        ajouter_prix(cur, beurre, "0.00876", il_y_a_jours=3)
-        plat = recette(cur, "croissant", portions=1, prix="11.00")  # 10,00 € HT
-        composant(cur, plat, 1000, ingredient=beurre)
+    def test_the_ratio_drift_over_six_weeks(self, cur):
+        butter = ingredient_priced_at(cur, "beurre", "0.00742", days_ago=42)
+        add_price(cur, butter, "0.00876", days_ago=3)
+        dish = recipe(cur, "croissant", portions=1, price="11.00")  # 10,00 € HT
+        component(cur, dish, 1000, ingredient=butter)
         cur.execute(
-            "SELECT ratio, ratio_avant, ecart_points, niveau FROM rapport_marges"
-            " WHERE recette_id = %s",
-            (plat,),
+            "SELECT ratio, ratio_before, drift_points, level FROM report_margins"
+            " WHERE recipe_id = %s",
+            (dish,),
         )
         assert cur.fetchone() == (Decimal("87.6"), Decimal("74.2"), Decimal("13.4"), "alerte")
 
-    def test_total_de_facture_incoherent_signale(self, cur):
-        fournisseur = inserer(cur, "INSERT INTO supplier (name) VALUES ('marée (test)')")
-        for numero, total in (("OK", "100.04"), ("KO", "104.20")):
-            facture = inserer(
+    def test_an_inconsistent_invoice_total_is_flagged(self, cur):
+        supplier = insert(cur, "INSERT INTO supplier (name) VALUES ('marée (test)')")
+        for number, total in (("OK", "100.04"), ("KO", "104.20")):
+            invoice = insert(
                 cur,
                 "INSERT INTO invoice (supplier_id, invoice_number, invoice_date, total_ht,"
                 " source_uri, source_hash) VALUES (%s, %s, CURRENT_DATE, %s, 'test', %s)",
-                fournisseur,
-                numero,
+                supplier,
+                number,
                 Decimal(total),
-                f"hash-{numero}",
+                f"hash-{number}",
             )
             cur.execute(
                 "INSERT INTO invoice_line (invoice_id, raw_label, qty, unit_price_ht,"
                 " line_total_ht) VALUES (%s, 'BAR', 1, 100, 100)",
-                (facture,),
+                (invoice,),
             )
         cur.execute(
-            "SELECT libelle, ecart FROM rapport_attention WHERE motif = 'total_incoherent'"
-            " AND fournisseur = 'marée (test)'"
+            "SELECT label, gap FROM report_flags WHERE reason = 'total_mismatch'"
+            " AND supplier = 'marée (test)'"
         )
         # 0,04 € d'écart reste sous la tolérance ; 4,20 € la dépasse.
         assert cur.fetchall() == [("KO", Decimal("4.20"))]
 
-    def test_la_tuile_ne_compte_que_les_alertes(self, cur):
+    def test_the_tile_counts_alerts_only(self, cur):
         """Décision du 15/09 : seules les alertes comptent en en-tête.
 
         La vigilance reste visible plat par plat. Mesuré en différence avant et
         après insertion, pour ne pas dépendre du contenu de la base.
         """
-        cur.execute("SELECT plats_en_alerte FROM rapport_resume")
-        avant = cur.fetchone()[0]
+        cur.execute("SELECT dishes_on_alert FROM report_summary")
+        before = cur.fetchone()[0]
 
-        beurre = ingredient_au_prix(cur, "beurre", "0.00742", il_y_a_jours=42)
-        ajouter_prix(cur, beurre, "0.00876", il_y_a_jours=3)
-        alerte = recette(cur, "croissant", portions=1, prix="11.00")  # +13,4 pts
-        composant(cur, alerte, 1000, ingredient=beurre)
-        vigilance = recette(cur, "brioche", portions=1, prix="110.00")  # +1,3 pt
-        composant(cur, vigilance, 1000, ingredient=beurre)
+        butter = ingredient_priced_at(cur, "beurre", "0.00742", days_ago=42)
+        add_price(cur, butter, "0.00876", days_ago=3)
+        alert = recipe(cur, "croissant", portions=1, price="11.00")  # +13,4 pts
+        component(cur, alert, 1000, ingredient=butter)
+        watch = recipe(cur, "brioche", portions=1, price="110.00")  # +1,3 pt
+        component(cur, watch, 1000, ingredient=butter)
 
         cur.execute(
-            "SELECT recette_id, niveau FROM rapport_marges WHERE recette_id IN (%s, %s)",
-            (alerte, vigilance),
+            "SELECT recipe_id, level FROM report_margins WHERE recipe_id IN (%s, %s)",
+            (alert, watch),
         )
-        assert dict(cur.fetchall()) == {alerte: "alerte", vigilance: "vigilance"}
-        cur.execute("SELECT plats_en_alerte FROM rapport_resume")
-        assert cur.fetchone()[0] == avant + 1
+        assert dict(cur.fetchall()) == {alert: "alerte", watch: "vigilance"}
+        cur.execute("SELECT dishes_on_alert FROM report_summary")
+        assert cur.fetchone()[0] == before + 1

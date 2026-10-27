@@ -12,13 +12,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from gramme.truth import Regime, SourceQuality, TruthInvoice, TruthLine, load_truth
+from gramme.truth import SourceQuality, TruthInvoice, TruthLine, VatBasis, load_truth
 
 # Un ticket Carrefour minimal : montants en TTC, pas de numéro de facture.
-ANNOTATION_TICKET = {
+TICKET = {
     "source_file": "2026-08-19_carrefour.jpg",
     "quality": "photo",
-    "regime": "ttc",
+    "vat_basis": "ttc",
     "supplier_name": "CARREFOUR MARKET",
     "invoice_date": "2026-08-19",
     "total_ht": "47.83",
@@ -42,101 +42,101 @@ ANNOTATION_TICKET = {
 
 
 class TestTruthLine:
-    def test_ligne_complete(self):
-        ligne = TruthLine(raw_label="BEURRE DOUX PLAQUE 25KG", qty=Decimal("2"))
-        assert ligne.unreadable == []
+    def test_a_complete_line(self):
+        line = TruthLine(raw_label="BEURRE DOUX PLAQUE 25KG", qty=Decimal("2"))
+        assert line.unreadable == []
 
-    def test_libelle_obligatoire(self):
+    def test_the_label_is_required(self):
         # Pas de libellé lisible = pas de ligne, pas une ligne douteuse.
         with pytest.raises(ValidationError):
             TruthLine(raw_label="")
 
-    def test_montants_tous_optionnels(self):
+    def test_every_amount_is_optional(self):
         # Une ligne peut être entièrement illisible sauf son libellé.
-        ligne = TruthLine(
+        line = TruthLine(
             raw_label="ARTICLE ILLISIBLE", unreadable=["qty", "unit_price_ht", "line_total_ht"]
         )
-        assert ligne.qty is None
+        assert line.qty is None
 
-    def test_illisible_ne_peut_pas_porter_de_valeur(self):
+    def test_an_unreadable_field_cannot_hold_a_value(self):
         with pytest.raises(ValidationError, match="déclaré illisible"):
             TruthLine(raw_label="X", unit_price_ht=Decimal("8.47"), unreadable=["unit_price_ht"])
 
-    def test_illisible_doit_nommer_un_champ_existant(self):
+    def test_unreadable_must_name_an_existing_field(self):
         # Attrape la faute de frappe d'annotation : "unit_price" au lieu de
         # "unit_price_ht" passerait sinon inaperçue et fausserait le score.
         with pytest.raises(ValidationError, match="champ inexistant"):
             TruthLine(raw_label="X", unreadable=["unit_price"])
 
-    def test_champ_inattendu_refuse(self):
+    def test_an_unexpected_field_is_refused(self):
         with pytest.raises(ValidationError):
-            TruthLine(raw_label="X", prix="8.47")
+            TruthLine(raw_label="X", price="8.47")
 
 
 class TestTruthInvoice:
-    def test_ticket_de_caisse(self):
-        facture = TruthInvoice.model_validate(ANNOTATION_TICKET)
-        assert facture.regime is Regime.TTC
-        assert facture.quality is SourceQuality.PHOTO
-        assert facture.invoice_number is None  # un ticket n'en porte pas
-        assert len(facture.lines) == 2
+    def test_a_till_receipt(self):
+        invoice = TruthInvoice.model_validate(TICKET)
+        assert invoice.vat_basis is VatBasis.INCLUDING
+        assert invoice.quality is SourceQuality.PHOTO
+        assert invoice.invoice_number is None  # un ticket n'en porte pas
+        assert len(invoice.lines) == 2
 
-    def test_regime_ht_par_defaut(self):
+    def test_amounts_are_excluding_vat_by_default(self):
         # Champ absent de l'annotation : on retombe sur le cas courant, la
         # facture fournisseur en HT.
-        sans_regime = {k: v for k, v in ANNOTATION_TICKET.items() if k != "regime"}
-        assert TruthInvoice.model_validate(sans_regime).regime is Regime.HT
+        without_basis = {k: v for k, v in TICKET.items() if k != "vat_basis"}
+        assert TruthInvoice.model_validate(without_basis).vat_basis is VatBasis.EXCLUDING
 
-    def test_facture_sans_ligne_refusee(self):
+    def test_an_invoice_without_lines_is_refused(self):
         with pytest.raises(ValidationError):
-            TruthInvoice.model_validate({**ANNOTATION_TICKET, "lines": []})
+            TruthInvoice.model_validate({**TICKET, "lines": []})
 
-    def test_pieges_et_illisibles_en_entete(self):
-        facture = TruthInvoice.model_validate(
+    def test_pitfalls_and_unreadable_header_fields(self):
+        invoice = TruthInvoice.model_validate(
             {
-                **ANNOTATION_TICKET,
+                **TICKET,
                 "invoice_number": None,
                 "total_ht": None,
                 "unreadable": ["total_ht"],
-                "pieges": ["remise de pied de page -2 %"],
+                "pitfalls": ["remise de pied de page -2 %"],
             }
         )
-        assert facture.unreadable == ["total_ht"]
-        assert facture.pieges == ["remise de pied de page -2 %"]
+        assert invoice.unreadable == ["total_ht"]
+        assert invoice.pitfalls == ["remise de pied de page -2 %"]
 
 
 class TestLoadTruth:
-    def _ecrire(self, dossier: Path, nom: str, contenu: dict) -> None:
-        (dossier / nom).write_text(json.dumps(contenu), encoding="utf-8")
+    def _write(self, directory: Path, name: str, content: dict) -> None:
+        (directory / name).write_text(json.dumps(content), encoding="utf-8")
 
-    def test_charge_et_valide(self, tmp_path):
-        self._ecrire(tmp_path, "a.json", ANNOTATION_TICKET)
-        self._ecrire(tmp_path, "b.json", {**ANNOTATION_TICKET, "quality": "pdf"})
-        assert len(load_truth(tmp_path, racine_raw=None)) == 2
+    def test_it_loads_and_validates(self, tmp_path):
+        self._write(tmp_path, "a.json", TICKET)
+        self._write(tmp_path, "b.json", {**TICKET, "quality": "pdf"})
+        assert len(load_truth(tmp_path, raw_root=None)) == 2
 
-    def test_dossier_vide_echoue(self, tmp_path):
+    def test_an_empty_directory_fails(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="aucune annotation"):
-            load_truth(tmp_path, racine_raw=None)
+            load_truth(tmp_path, raw_root=None)
 
-    def test_le_fichier_fautif_est_nomme(self, tmp_path):
+    def test_the_faulty_file_is_named(self, tmp_path):
         # Sans le nom du fichier, une erreur Pydantic sur quinze annotations
         # est inexploitable.
-        self._ecrire(tmp_path, "cassee.json", {**ANNOTATION_TICKET, "quality": "floue"})
+        self._write(tmp_path, "cassee.json", {**TICKET, "quality": "floue"})
         with pytest.raises(ValueError, match="cassee.json"):
-            load_truth(tmp_path, racine_raw=None)
+            load_truth(tmp_path, raw_root=None)
 
-    def test_document_source_manquant_echoue(self, tmp_path):
+    def test_a_missing_source_document_fails(self, tmp_path):
         truth, raw = tmp_path / "truth", tmp_path / "raw"
         truth.mkdir()
         raw.mkdir()
-        self._ecrire(truth, "a.json", ANNOTATION_TICKET)
+        self._write(truth, "a.json", TICKET)
         with pytest.raises(FileNotFoundError, match="introuvable"):
-            load_truth(truth, racine_raw=raw)
+            load_truth(truth, raw_root=raw)
 
-    def test_document_source_present(self, tmp_path):
+    def test_a_present_source_document(self, tmp_path):
         truth, raw = tmp_path / "truth", tmp_path / "raw"
         truth.mkdir()
         raw.mkdir()
-        self._ecrire(truth, "a.json", ANNOTATION_TICKET)
+        self._write(truth, "a.json", TICKET)
         (raw / "2026-08-19_carrefour.jpg").write_bytes(b"")
-        assert len(load_truth(truth, racine_raw=raw)) == 1
+        assert len(load_truth(truth, raw_root=raw)) == 1

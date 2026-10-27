@@ -134,8 +134,8 @@ class RawInvoiceLine(BaseModel):
         if qty is None or price is None or total is None:
             return ArithmeticCheck.INCOMPLETE
 
-        ecart = abs(qty * price - total)
-        return ArithmeticCheck.OK if ecart <= tolerance else ArithmeticCheck.MISMATCH
+        gap = abs(qty * price - total)
+        return ArithmeticCheck.OK if gap <= tolerance else ArithmeticCheck.MISMATCH
 
 
 class RawInvoice(BaseModel):
@@ -173,11 +173,11 @@ class RawInvoice(BaseModel):
         if total is None:
             return ArithmeticCheck.INCOMPLETE
 
-        somme = Decimal(0)
-        for ligne in self.lines:
-            montant = ligne.line_total_ht.value
-            if montant is None:
+        summed = Decimal(0)
+        for line in self.lines:
+            amount = line.line_total_ht.value
+            if amount is None:
                 return ArithmeticCheck.INCOMPLETE
-            somme += montant
+            summed += amount
 
-        return ArithmeticCheck.OK if abs(somme - total) <= tolerance else ArithmeticCheck.MISMATCH
+        return ArithmeticCheck.OK if abs(summed - total) <= tolerance else ArithmeticCheck.MISMATCH
