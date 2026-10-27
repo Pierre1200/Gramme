@@ -10,15 +10,16 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (20/09/2026) : fondations et démo écrites, auditées et testées ;
+**État actuel (27/10/2026) : fondations et démo écrites, auditées et testées ;
 extraction pas commencée.**
 
-- Écrit, 110 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
-  `scripts/classer.py`, schéma SQL (`001_schema.sql`, `002_rapport.sql`)
+- Écrit, 124 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+  `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
+  (`001_schema.sql`, `002_rapport.sql`)
 - Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
-- Pas encore écrit : `scripts/evaluate.py` (appelé par `make eval`), `llm.py`,
-  `extract.py`, écriture en base dans `db.py`, `normalize.py`, `report.py`
+- Pas encore écrit : `llm.py`, `extract.py`, écriture en base dans `db.py`,
+  `normalize.py`, `report.py`
 - Aucune facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
@@ -26,6 +27,8 @@ extraction pas commencée.**
   paramètres à confirmer sur les premières factures de l'hôtel-restaurant
 - Documentation : `README.md` (vitrine), `JOURNAL.md` (les décisions et leurs
   raisons), `AUDIT.md` (audit du 20/09/2026), `COLLECTE.md` (jeu de vérité)
+- Intégration continue : `.github/workflows/ci.yml`, job `backend` — lint,
+  format et les 110 tests avec un vrai PostgreSQL
 
 ## Comment je veux travailler
 
@@ -39,7 +42,15 @@ Toujours valables :
   décisions, pas recevoir un fichier fini.
 - **Utilise le mode plan** pour toute tâche touchant plusieurs fichiers.
 - Avance par étapes relisibles, et fais le point entre chacune.
-- Commente généreusement : le code doit se relire sans toi.
+- Commente le POURQUOI, pas le récit. Un commentaire dit pourquoi le code est
+  ainsi ; il ne raconte pas l'histoire de la décision.
+- **Explique chaque terme technique à chaque fois que tu l'emploies**, dans le
+  message où il apparaît : sigle développé, puis ce que ça fait concrètement et
+  pourquoi on l'utilise. Un mot que je ne sais pas expliquer à l'oral est un mot
+  que je ne dois pas rendre.
+- **Pas de méta-commentaire dans les livrables.** Contraintes internes, temps
+  disponible, niveau : ça ne figure jamais dans un document rendu. On documente
+  les décisions et leurs motifs techniques, pas nos circonstances.
 - Préviens-moi quand je pars dans une mauvaise direction, même si je
   n'ai rien demandé. Le désaccord argumenté est plus utile que
   l'exécution docile.
@@ -49,6 +60,54 @@ En pause tant que Claude écrit (mode apprentissage) :
   puis la suivante. Si tu proposes plus de 60 lignes d'un coup, découpe.
 - Propose des indices avant des solutions complètes. Je bloque volontiers
   cinq minutes si ça me fait comprendre.
+
+## Méthode Git
+
+- **Une branche par fonctionnalité**, jamais par personne. Nommage :
+  `feat/…`, `fix/…`, `chore/…`, `ci/…`, `docs/…`.
+- **Les branches partent de `dev` et y retournent** par Pull Request. `dev` est
+  la branche d'intégration ; `main` reçoit `dev` quand l'ensemble est stable.
+- **`main` et `dev` sont protégées** : Pull Request obligatoire, une
+  approbation, et le contrôle `backend` vert.
+- **Les Pull Requests sont rédigées en français.** Le code, les identifiants et
+  les messages de commit restent en anglais.
+- **Messages de commit au format conventionnel, avec portée** :
+  `feat(scoring): count missing lines in the wrong rate`.
+- **Squash and merge**, puis suppression de la branche. À régler aussi dans les
+  réglages GitHub du dépôt : n'autoriser que le squash, sinon le bouton de
+  fusion classique reste disponible et la règle écrite ne tient pas.
+- **Mettre une branche à jour se fait par rebase**, pas par `merge dev`. Un
+  `git merge dev` dans une branche de travail laisse un commit de fusion que le
+  squash final n'efface pas, et l'historique cesse d'être linéaire.
+- **C'est Pierre qui pousse.** J'écris le code dans les fichiers, mais je ne
+  commite ni ne pousse jamais.
+
+## Langue du code
+
+**Tout identifiant est en anglais** : fonctions, classes, variables, constantes,
+fichiers, vues et colonnes SQL, classes CSS, noms de tests. Les docstrings, les
+commentaires et les textes affichés à l'utilisateur restent **en français**.
+
+Deux exceptions assumées, pour des termes sans équivalent anglais exact : les
+valeurs `"ht"` et `"ttc"` (mentions portées sur les documents eux-mêmes) et les
+niveaux `ok` / `vigilance` / `alerte` (affichés tels quels).
+
+| Terme métier | Identifiant | Définition |
+|---|---|---|
+| Facture | `invoice` | Le document reçu d'un fournisseur |
+| Ligne de facture | `invoice_line` | Une ligne d'article sur ce document |
+| Libellé brut | `raw_label` | Le texte imprimé sur la ligne, avant tout rapprochement |
+| Ingrédient | `ingredient` | L'intrant canonique du référentiel, indépendant du fournisseur |
+| Rendement, parage | `yield_ratio` | Part utilisable d'un produit brut, portée par le composant |
+| Prix relevé | `price_point` | Une observation de prix, jamais modifiée |
+| Ratio | `ratio` | Coût matière rapporté au prix de vente HT — terme conservé |
+| Marge brute | `margin_per_portion` | Ce qui reste par portion, en euros |
+| Dérive | `drift_points` | Écart de ratio en points sur six semaines |
+| Jeu de vérité | `truth` | Les annotations faites à la main, référence du banc d'essai |
+| Barème | `scoring` | Ce que « réussir » veut dire, défini avant l'extracteur |
+| File de validation | `to_review` | Champs sous le seuil de confiance, à relire |
+| Empreinte | `fingerprint` | SHA-256 du contenu, base de l'anti-doublon |
+| Illisible | `unreadable` | Présent sur le papier, non déchiffré |
 
 ## Décisions d'architecture — non négociables
 
@@ -200,8 +259,11 @@ précédente n'est pas finie. Seule exception : la démo, qui avance `db.py`
 (étape 5) — voir « Démo » plus bas.
 
 1. `models.py` — contrats Pydantic (Invoice, InvoiceLine, confiance par champ)
-2. `scripts/evaluate.py` — le banc d'essai, **avant** l'extracteur
-   (barème écrit : `truth.py`, `scoring.py` ; reste le script lui-même)
+2. `scripts/evaluate.py` — le banc d'essai, **avant** l'extracteur. **Fait**
+   (`truth.py`, `scoring.py`, `bench.py`). `make eval` affiche aussi l'état du
+   corpus face aux critères de sortie de COLLECTE.md, utile pendant la collecte.
+   Les extractions seront lues dans `data/extractions/`, un JSON par document,
+   appariées par `source_file` : le banc se rejoue sans rappeler le modèle.
 3. `llm.py` — client + instrumentation
 4. `extract.py` — première extraction, itérer sur le prompt
 5. schéma SQL + `db.py` — **lecture faite pour la démo** (`002_rapport.sql`,
@@ -278,7 +340,7 @@ db/seed/demo.sql               chiffres fictifs datés d'aujourd'hui, gramme_dem
 src/gramme/config.py           adresses des deux bases, lues dans .env
 src/gramme/db.py               lire_rapport() : un seul instantané, aucun calcul
 src/gramme/web.py              FastAPI : GET /rapport, GET et POST /envoyer
-templates/                     base.html, rapport.html, envoyer.html
+templates/                     base.html, report.html, upload.html
 ```
 
 Le seed vit dans `db/seed/`, **pas** dans `db/migrations/` : tout ce qui est
@@ -309,7 +371,7 @@ Postgres, y compris sur la base principale.
 - ruff (lint + format), pytest, pre-commit
 - Modèle par défaut : MiniMax-M3, base_url `https://api.minimax.io/v1`
 
-Commandes : `make up`, `make test`, `make lint`, `make eval`, `make demo-db`, `make demo`
+Commandes : `make help` les liste toutes.
 
 Démo : FastAPI, Jinja2, uvicorn, et **python-multipart** (requis par FastAPI
 pour recevoir des fichiers). Validées et installées le 15/09/2026.

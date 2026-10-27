@@ -29,14 +29,14 @@ Le projet est en construction. Ce qui suit est vrai au 20/09/2026.
 |---|---|
 | ✅ Moteur de calcul SQL | coûts, marges, ratios, dérive de prix, sous-recettes récursives |
 | ✅ Contrats d'extraction | confiance par champ, trois états de lecture |
-| ✅ Banc d'essai | barème écrit **avant** l'extracteur |
+| ✅ Banc d'essai | barème et banc écrits **avant** l'extracteur ; `make eval` dit aussi où en est le corpus |
 | ✅ Entrée des documents | anti-doublon par empreinte, original jamais altéré |
 | ✅ Démo web | deux pages, chiffres fictifs, calcul réel |
 | ⬜ Extraction par modèle | prochaine étape |
 | ⬜ Normalisation des libellés | libellé fournisseur → ingrédient |
 | ⬜ Envoi du rapport | génération et expédition hebdomadaires |
 
-**110 tests**, dont 14 qui s'exécutent dans Postgres.
+**124 tests**, dont 14 qui s'exécutent dans Postgres, rejoués par l'intégration continue à chaque poussée.
 
 ## La démo
 
@@ -72,10 +72,11 @@ src/gramme/
   truth.py         jeu de vérité annoté à la main
   scoring.py       le barème : ce que « réussir » veut dire
   intake.py        entrée des documents
+  bench.py         état du corpus et notation des extractions
   config.py        configuration lue dans .env
   db.py            lecture des vues du rapport
   web.py           les deux pages de la démo
-templates/         pages Jinja2
+templates/         pages Jinja2 (base, report, upload)
 tests/             110 tests
 data/              documents clients — intégralement hors Git
 ```
@@ -114,10 +115,14 @@ make test
 | `make demo` | base de démonstration, puis les deux pages sur le réseau local |
 | `make test` | pytest |
 | `make lint` | ruff format puis check |
+| `make help` | liste toutes les commandes |
 | `make eval` | banc d'essai : extraction comparée au jeu de vérité |
 
 **Stack** — Python 3.12, PostgreSQL 16, Pydantic, psycopg 3, FastAPI, Jinja2,
-uv, ruff, pytest. Docker Compose pour la base.
+uv, ruff, pytest. Docker Compose pour la base, GitHub Actions pour la CI.
+
+Les identifiants sont en anglais, les commentaires et la documentation en
+français : voir la section « Langue du code » de [CLAUDE.md](CLAUDE.md).
 
 ## Confidentialité
 
