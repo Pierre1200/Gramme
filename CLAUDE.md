@@ -10,10 +10,11 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (11/11/2026) : fondations, démo et jeu de factures factices
-écrits et testés ; lecture des factures pas commencée.**
+**État actuel (11/11/2026) : fondations, démo, jeu de factures factices et
+lecteur de factures électroniques écrits et testés ; écriture en base pas
+commencée.**
 
-- Écrit, 158 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 168 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
   (`001_schema.sql`, `002_rapport.sql`)
 - Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
@@ -21,9 +22,13 @@ d'architecture Python l'est moins.
   factures factices » plus bas
 - Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
-- Pas encore écrit : le lecteur de Factur-X, l'écriture en base dans `db.py`,
-  `normalize.py`, `llm.py`, `report.py`, le tableau de bord ; `extract.py`
-  (lecture papier) est reporté
+- Lecteur de Factur-X (`make read`) : `facturx.read_invoice` rend un
+  `RawInvoice` ; un PDF sans XML lève `NotFacturX`. Sur le jeu factice,
+  `make eval CORPUS=data/synthetic` donne 438 documents sans un champ faux :
+  c'est une vérification de tuyauterie, pas une mesure de qualité
+- Pas encore écrit : l'écriture en base dans `db.py`, `normalize.py`,
+  `llm.py`, `report.py`, le tableau de bord ; `extract.py` (lecture papier)
+  est reporté
 - Aucune vraie facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
@@ -263,7 +268,9 @@ valeur relative par défaut.
 se lisent sans modèle. La suite se construit sur le jeu factice, dans cet
 ordre, sans proposer une étape tant que la précédente n'est pas finie :
 
-1. Le lecteur de Factur-X (XML → `RawInvoice`), dans `facturx.py`
+1. Le lecteur de Factur-X (XML → `RawInvoice`), dans `facturx.py`. **Fait.**
+   Le contrat a gagné `supplier_ref` sur la ligne et `adjustments` (remises et
+   frais de pied de facture) sur la facture ; un avoir est rendu en négatif.
 2. L'écriture en base des factures lues, dans `db.py`
 3. `normalize.py` — rapprocher les libellés des ingrédients : c'est là que le
    modèle de langage sert, donc `llm.py` arrive avec lui
