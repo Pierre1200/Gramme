@@ -103,6 +103,11 @@ class RawInvoiceLine(BaseModel):
     # supplier_product.status / .confidence, pas ici.
     raw_label: str = Field(min_length=1)
 
+    # Référence article du fournisseur, quand le document en porte une. Nue,
+    # comme le libellé : c'est elle qui relie deux libellés d'un même produit
+    # quand le fournisseur le renomme.
+    supplier_ref: str | None = None
+
     qty: Extracted[Decimal]
 
     # L'unité TELLE QU'IMPRIMÉE : "KG", "CT", "PCE", "L", "COLIS"...
@@ -138,6 +143,20 @@ class RawInvoiceLine(BaseModel):
         return ArithmeticCheck.OK if gap <= tolerance else ArithmeticCheck.MISMATCH
 
 
+class RawAdjustment(BaseModel):
+    """Une remise ou des frais de pied de facture, tels qu'ils ont été LUS.
+
+    Ils s'appliquent après le total des lignes : sans eux, une facture à
+    remise passerait pour une facture à laquelle il manque une ligne.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str = Field(min_length=1)
+    # Signé : négatif pour une remise, positif pour des frais.
+    amount_ht: Extracted[Decimal]
+
+
 class RawInvoice(BaseModel):
     """Une facture telle qu'elle a été LUE.
 
@@ -162,8 +181,10 @@ class RawInvoice(BaseModel):
 
     lines: list[RawInvoiceLine] = Field(min_length=1)
 
+    adjustments: list[RawAdjustment] = Field(default_factory=list)
+
     def check_total(self, tolerance: Decimal = INVOICE_TOTAL_TOLERANCE) -> ArithmeticCheck:
-        """Recoupe la somme des lignes contre le total HT imprimé.
+        """Recoupe lignes et pied de facture contre le total HT imprimé.
 
         C'est le seul contrôle qui attrape une ligne entièrement manquante
         (bas de page coupé au scan) : aucune enveloppe par champ ne peut
@@ -173,11 +194,10 @@ class RawInvoice(BaseModel):
         if total is None:
             return ArithmeticCheck.INCOMPLETE
 
-        summed = Decimal(0)
-        for line in self.lines:
-            amount = line.line_total_ht.value
-            if amount is None:
-                return ArithmeticCheck.INCOMPLETE
-            summed += amount
+        amounts = [line.line_total_ht.value for line in self.lines]
+        amounts += [adjustment.amount_ht.value for adjustment in self.adjustments]
+        if any(amount is None for amount in amounts):
+            return ArithmeticCheck.INCOMPLETE
+        summed = sum(amounts, Decimal(0))
 
         return ArithmeticCheck.OK if abs(summed - total) <= tolerance else ArithmeticCheck.MISMATCH

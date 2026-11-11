@@ -17,6 +17,7 @@ from gramme.models import (
     ArithmeticCheck,
     Extracted,
     FieldStatus,
+    RawAdjustment,
     RawInvoice,
     RawInvoiceLine,
 )
@@ -118,6 +119,26 @@ class TestInvoiceArithmetic:
     def test_an_invoice_without_lines_is_refused(self):
         with pytest.raises(ValidationError):
             invoice("219.00", [])
+
+    def test_a_footer_discount_explains_the_gap(self):
+        # 2 % de remise après le total des lignes : sans le pied de facture,
+        # le même document passerait pour une facture tronquée.
+        lines = [line("1", "100.00", "100.00")]
+        discounted = invoice("98.00", lines)
+        assert discounted.check_total() is ArithmeticCheck.MISMATCH
+
+        discount = RawAdjustment(label="REMISE 2 %", amount_ht=read(Decimal, Decimal("-2.00")))
+        explained = discounted.model_copy(update={"adjustments": [discount]})
+        assert explained.check_total() is ArithmeticCheck.OK
+
+    def test_an_unreadable_adjustment_leaves_the_total_unchecked(self):
+        unreadable = RawAdjustment(
+            label="REMISE", amount_ht=Extracted[Decimal](status=FieldStatus.UNREADABLE)
+        )
+        got = invoice("98.00", [line("1", "100.00", "100.00")]).model_copy(
+            update={"adjustments": [unreadable]}
+        )
+        assert got.check_total() is ArithmeticCheck.INCOMPLETE
 
 
 def test_the_sql_tolerance_follows_the_python_one():
