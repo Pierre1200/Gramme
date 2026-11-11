@@ -22,30 +22,30 @@ from gramme.models import (
 )
 
 
-def lu[T](type_: type[T], valeur: T, confiance: float = 0.95) -> Extracted[T]:
+def read[T](type_: type[T], value: T, confidence: float = 0.95) -> Extracted[T]:
     return Extracted[type_](
-        status=FieldStatus.READ, value=valeur, raw_text=str(valeur), confidence=confiance
+        status=FieldStatus.READ, value=value, raw_text=str(value), confidence=confidence
     )
 
 
-def ligne(qty: str, prix: str, total: str) -> RawInvoiceLine:
+def line(qty: str, unit_price: str, total: str) -> RawInvoiceLine:
     return RawInvoiceLine(
         raw_label="BEURRE DOUX PLAQUE 25KG",
-        qty=lu(Decimal, Decimal(qty)),
-        raw_unit=lu(str, "KG"),
-        unit_price_ht=lu(Decimal, Decimal(prix)),
-        line_total_ht=lu(Decimal, Decimal(total)),
+        qty=read(Decimal, Decimal(qty)),
+        raw_unit=read(str, "KG"),
+        unit_price_ht=read(Decimal, Decimal(unit_price)),
+        line_total_ht=read(Decimal, Decimal(total)),
     )
 
 
-def facture(total_ht: str, lignes: list[RawInvoiceLine]) -> RawInvoice:
+def invoice(total_ht: str, lines: list[RawInvoiceLine]) -> RawInvoice:
     return RawInvoice(
-        supplier_name=lu(str, "METRO"),
-        invoice_number=lu(str, "FA-2026-1187"),
-        invoice_date=lu(date, date(2026, 8, 12)),
-        total_ht=lu(Decimal, Decimal(total_ht)),
-        total_ttc=lu(Decimal, Decimal(total_ht) * Decimal("1.055")),
-        lines=lignes,
+        supplier_name=read(str, "METRO"),
+        invoice_number=read(str, "FA-2026-1187"),
+        invoice_date=read(date, date(2026, 8, 12)),
+        total_ht=read(Decimal, Decimal(total_ht)),
+        total_ttc=read(Decimal, Decimal(total_ht) * Decimal("1.055")),
+        lines=lines,
     )
 
 
@@ -64,64 +64,64 @@ class TestExtracted:
             pytest.param({"status": "absent", "note": "x"}, id="champ inattendu"),
         ],
     )
-    def test_etats_incoherents_refuses(self, kwargs):
+    def test_inconsistent_states_are_refused(self, kwargs):
         with pytest.raises(ValidationError):
             Extracted[Decimal](**kwargs)
 
-    def test_absent_ne_demande_pas_de_relecture(self):
+    def test_an_absent_field_needs_no_review(self):
         # Un champ que le document ne porte pas n'est pas une erreur : il ne
         # doit pas polluer la file de validation.
         assert Extracted[Decimal](status=FieldStatus.ABSENT).needs_review(0.9) is False
 
-    def test_unreadable_demande_toujours_une_relecture(self):
+    def test_an_unreadable_field_always_needs_review(self):
         assert Extracted[Decimal](status=FieldStatus.UNREADABLE).needs_review(0.0) is True
 
-    def test_confiance_sous_le_seuil(self):
-        assert lu(Decimal, Decimal(1), confiance=0.7).needs_review(0.9) is True
-        assert lu(Decimal, Decimal(1), confiance=0.95).needs_review(0.9) is False
+    def test_confidence_below_the_threshold(self):
+        assert read(Decimal, Decimal(1), confidence=0.7).needs_review(0.9) is True
+        assert read(Decimal, Decimal(1), confidence=0.95).needs_review(0.9) is False
 
-    def test_immuable(self):
+    def test_it_is_immutable(self):
         with pytest.raises(ValidationError):
-            lu(Decimal, Decimal(1)).confidence = 0.1
+            read(Decimal, Decimal(1)).confidence = 0.1
 
 
-class TestRecoupementLigne:
-    def test_arrondi_fournisseur_accepte(self):
+class TestLineArithmetic:
+    def test_a_supplier_rounding_is_accepted(self):
         # 12,5 × 8,47 = 105,875, imprimé 105,88.
-        assert ligne("12.5", "8.47", "105.88").check_arithmetic() is ArithmeticCheck.OK
+        assert line("12.5", "8.47", "105.88").check_arithmetic() is ArithmeticCheck.OK
 
-    def test_incoherence_detectee(self):
-        assert ligne("12.5", "8.47", "158.88").check_arithmetic() is ArithmeticCheck.MISMATCH
+    def test_an_inconsistency_is_detected(self):
+        assert line("12.5", "8.47", "158.88").check_arithmetic() is ArithmeticCheck.MISMATCH
 
-    def test_champ_illisible_ne_reconstruit_rien(self):
-        ligne_ko = RawInvoiceLine(
+    def test_an_unreadable_field_reconstructs_nothing(self):
+        broken = RawInvoiceLine(
             raw_label="X",
-            qty=lu(Decimal, Decimal("12.5")),
-            raw_unit=lu(str, "KG"),
+            qty=read(Decimal, Decimal("12.5")),
+            raw_unit=read(str, "KG"),
             unit_price_ht=Extracted[Decimal](status=FieldStatus.UNREADABLE, raw_text="8,4?"),
-            line_total_ht=lu(Decimal, Decimal("105.88")),
+            line_total_ht=read(Decimal, Decimal("105.88")),
         )
-        assert ligne_ko.check_arithmetic() is ArithmeticCheck.INCOMPLETE
-        assert ligne_ko.unit_price_ht.value is None  # surtout pas 8.47 déduit du total
+        assert broken.check_arithmetic() is ArithmeticCheck.INCOMPLETE
+        assert broken.unit_price_ht.value is None  # surtout pas 8.47 déduit du total
 
 
-class TestRecoupementFacture:
-    def test_somme_coherente(self):
-        f = facture("219.00", [ligne("1", "100.00", "100.00"), ligne("1", "119.00", "119.00")])
-        assert f.check_total() is ArithmeticCheck.OK
+class TestInvoiceArithmetic:
+    def test_a_consistent_total(self):
+        got = invoice("219.00", [line("1", "100.00", "100.00"), line("1", "119.00", "119.00")])
+        assert got.check_total() is ArithmeticCheck.OK
 
-    def test_ligne_manquante_detectee(self):
+    def test_a_missing_line_is_detected(self):
         # Le cas qu'aucune enveloppe par champ ne peut voir : bas de page coupé.
-        f = facture("219.00", [ligne("1", "100.00", "100.00")])
-        assert f.check_total() is ArithmeticCheck.MISMATCH
+        got = invoice("219.00", [line("1", "100.00", "100.00")])
+        assert got.check_total() is ArithmeticCheck.MISMATCH
 
-    def test_facture_sans_ligne_refusee(self):
+    def test_an_invoice_without_lines_is_refused(self):
         with pytest.raises(ValidationError):
-            facture("219.00", [])
+            invoice("219.00", [])
 
 
-def test_la_tolerance_sql_suit_la_tolerance_python():
-    """La vue `rapport_attention` réécrit la tolérance en dur.
+def test_the_sql_tolerance_follows_the_python_one():
+    """La vue `report_flags` réécrit la tolérance en dur.
 
     Les deux valeurs doivent bouger ensemble : ce test casse si l'une change
     sans l'autre.

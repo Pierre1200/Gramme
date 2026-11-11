@@ -4,22 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FFF7ED">
-<title>{% block titre %}Gramme{% endblock %} · Gramme</title>
+<title>{% block title %}Gramme{% endblock %} · Gramme</title>
 <style>
   /* Palette chaude : crème, tomate (hausse), safran (vigilance), olive (stable).
-     Les teintes « -texte » sont assombries pour rester lisibles en petit corps. */
+     Les teintes « -text » sont assombries pour rester lisibles en petit corps. */
   :root {
-    --creme: #FFF7ED;
-    --carte: #FFFFFF;
-    --bord: #F2E6D6;
-    --piste: #F4ECE2;
-    --encre: #2B2118;
-    --doux: #7A6A5D;
-    --tomate: #E4572E;  --tomate-texte: #B23B19;  --tomate-pale: #FDE8E0;
-    --safran: #F4A259;  --safran-texte: #95570D;  --safran-pale: #FDF0DC;
-    --olive: #5B8E55;   --olive-texte: #3E6B39;   --olive-pale: #E6F0E1;
-    --ombre: 0 1px 2px rgba(43, 33, 24, .05), 0 12px 32px -14px rgba(43, 33, 24, .22);
-    --rayon: 22px;
+    --cream: #FFF7ED;
+    --card: #FFFFFF;
+    --border: #F2E6D6;
+    --track: #F4ECE2;
+    --ink: #2B2118;
+    --muted: #7A6A5D;
+    --tomato: #E4572E;  --tomato-text: #B23B19;  --tomato-soft: #FDE8E0;
+    --saffron: #F4A259; --saffron-text: #95570D; --saffron-soft: #FDF0DC;
+    --olive: #5B8E55;   --olive-text: #3E6B39;   --olive-soft: #E6F0E1;
+    --shadow: 0 1px 2px rgba(43, 33, 24, .05), 0 12px 32px -14px rgba(43, 33, 24, .22);
+    --radius: 22px;
   }
 
   * { box-sizing: border-box; }
@@ -27,113 +27,113 @@
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    background: var(--creme);
-    color: var(--encre);
+    background: var(--cream);
+    color: var(--ink);
     font: 16px/1.45 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     /* place pour les onglets fixés en bas */
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
   a { color: inherit; }
-  .chiffre { font-variant-numeric: tabular-nums; }
-  .doux { color: var(--doux); }
+  .figure { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
 
   /* ---- Barre du haut ---------------------------------------------------- */
-  .barre {
+  .topbar {
     position: sticky; top: 0; z-index: 10;
     background: rgba(255, 247, 237, .88);
     -webkit-backdrop-filter: saturate(1.4) blur(14px);
     backdrop-filter: saturate(1.4) blur(14px);
   }
-  .barre__contenu {
+  .topbar__inner {
     max-width: 760px; margin: 0 auto;
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
     padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
   }
   .logo { font-weight: 800; font-size: 1.4rem; letter-spacing: -.03em; text-decoration: none; }
-  .logo span { color: var(--tomate); }
+  .logo span { color: var(--tomato); }
 
-  .pastille {
+  .pill {
     display: inline-flex; align-items: center; gap: .3em;
     padding: .32em .75em; border-radius: 999px;
     font-size: .8125rem; font-weight: 700; white-space: nowrap;
   }
-  .pastille--tomate { background: var(--tomate-pale); color: var(--tomate-texte); }
-  .pastille--safran { background: var(--safran-pale); color: var(--safran-texte); }
-  .pastille--olive  { background: var(--olive-pale);  color: var(--olive-texte); }
+  .pill--tomato  { background: var(--tomato-soft);  color: var(--tomato-text); }
+  .pill--saffron { background: var(--saffron-soft); color: var(--saffron-text); }
+  .pill--olive   { background: var(--olive-soft);   color: var(--olive-text); }
 
   /* ---- Page ----------------------------------------------------------------- */
   .page { max-width: 760px; margin: 0 auto; padding: 4px 16px 16px; }
-  .entete { padding: 14px 4px 22px; }
-  .surtitre {
+  .header { padding: 14px 4px 22px; }
+  .eyebrow {
     margin: 0 0 6px; font-size: .78rem; font-weight: 800;
-    letter-spacing: .09em; text-transform: uppercase; color: var(--tomate-texte);
+    letter-spacing: .09em; text-transform: uppercase; color: var(--tomato-text);
   }
-  .entete h1 {
+  .header h1 {
     margin: 0; font-size: clamp(1.8rem, 6.5vw, 2.4rem);
     line-height: 1.08; letter-spacing: -.025em; font-weight: 800;
   }
-  .entete h1::first-letter { text-transform: uppercase; }
-  .sous-titre { margin: 10px 0 0; color: var(--doux); }
+  .header h1::first-letter { text-transform: uppercase; }
+  .subtitle { margin: 10px 0 0; color: var(--muted); }
 
-  .titre-section {
+  .section-title {
     display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
     margin: 30px 4px 12px; font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em;
   }
-  .titre-section small { font-size: .8125rem; font-weight: 600; color: var(--doux); }
+  .section-title small { font-size: .8125rem; font-weight: 600; color: var(--muted); }
 
-  .carte {
-    background: var(--carte); border: 1px solid var(--bord);
-    border-radius: var(--rayon); box-shadow: var(--ombre);
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
   }
-  .vide { padding: 18px; text-align: center; color: var(--doux); }
+  .empty { padding: 18px; text-align: center; color: var(--muted); }
 
-  .note { margin: 30px 8px 4px; font-size: .8125rem; color: var(--doux); text-align: center; }
-  .note a { font-weight: 700; color: var(--tomate-texte); }
+  .note { margin: 30px 8px 4px; font-size: .8125rem; color: var(--muted); text-align: center; }
+  .note a { font-weight: 700; color: var(--tomato-text); }
 
   /* ---- Onglets du bas, façon appli ----------------------------------------- */
-  .onglets {
+  .tabs {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
     background: rgba(255, 247, 237, .92);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-    border-top: 1px solid var(--bord);
+    border-top: 1px solid var(--border);
   }
-  .onglets__contenu { max-width: 420px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .onglet {
+  .tabs__inner { max-width: 420px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tab {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     padding: 8px; border-radius: 16px; text-decoration: none;
-    font-size: .75rem; font-weight: 700; color: var(--doux);
+    font-size: .75rem; font-weight: 700; color: var(--muted);
   }
-  .onglet svg { width: 24px; height: 24px; }
-  .onglet--actif { background: var(--tomate-pale); color: var(--tomate-texte); }
+  .tab svg { width: 24px; height: 24px; }
+  .tab--active { background: var(--tomato-soft); color: var(--tomato-text); }
 
   {% block style %}{% endblock %}
 </style>
 </head>
 <body>
-  <header class="barre">
-    <div class="barre__contenu">
+  <header class="topbar">
+    <div class="topbar__inner">
       <a class="logo" href="/rapport">Gramme<span>.</span></a>
-      <span class="pastille pastille--safran">Exemple · chiffres fictifs</span>
+      <span class="pill pill--saffron">Exemple · chiffres fictifs</span>
     </div>
   </header>
 
   <main class="page">
-    {% block contenu %}{% endblock %}
+    {% block content %}{% endblock %}
   </main>
 
-  <nav class="onglets" aria-label="Navigation">
-    <div class="onglets__contenu">
-      <a class="onglet {% if page == 'rapport' %}onglet--actif{% endif %}" href="/rapport"
-         {% if page == 'rapport' %}aria-current="page"{% endif %}>
+  <nav class="tabs" aria-label="Navigation">
+    <div class="tabs__inner">
+      <a class="tab {% if page == 'report' %}tab--active{% endif %}" href="/rapport"
+         {% if page == 'report' %}aria-current="page"{% endif %}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
           <path d="M5 20v-8M12 20V5M19 20v-5"/>
         </svg>
         Rapport
       </a>
-      <a class="onglet {% if page == 'envoyer' %}onglet--actif{% endif %}" href="/envoyer"
-         {% if page == 'envoyer' %}aria-current="page"{% endif %}>
+      <a class="tab {% if page == 'upload' %}tab--active{% endif %}" href="/envoyer"
+         {% if page == 'upload' %}aria-current="page"{% endif %}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/>
           <circle cx="12" cy="13.5" r="3.5"/>

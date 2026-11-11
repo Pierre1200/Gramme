@@ -164,3 +164,103 @@ raison d'être, et le prénom d'un client a été retiré du code.
 
 `setup_projet.md` a été supprimé : il décrivait une arborescence devenue fausse
 et faisait doublon avec le README.
+
+## 27/10/2026 — Conventions de code, méthode Git, intégration continue
+
+Le dépôt vivait encore en direct sur `main`, sans intégration continue, avec des
+identifiants français. Trois chantiers menés ensemble, parce qu'ils se tiennent.
+
+**Identifiants en anglais, commentaires en français.** Le moment était le bon :
+3 500 lignes et 110 tests comme filet. Après l'extraction, le même chantier
+aurait coûté le double, sur du code neuf encore non couvert.
+
+Deux exceptions assumées, pour des termes sans équivalent anglais exact : les
+valeurs `"ht"` et `"ttc"`, qui sont les mentions portées sur les documents
+eux-mêmes, et les niveaux `ok` / `vigilance` / `alerte`, affichés tels quels.
+`"manuscrit"` est devenu `"handwritten"` : celui-là est notre propre catégorie,
+pas une mention imprimée. Le format d'annotation pouvait changer sans douleur —
+`data/truth/` est encore vide.
+
+**Ce que le renommage a cassé, et que les tests ont attrapé.** Une colonne
+oubliée : `variation_pct` n'avait pas été renommée en `change_pct` alors que
+`db.py` l'attendait. Et la base principale portait encore les anciennes vues,
+créées en septembre : il a fallu rejouer les migrations. Les deux ont été
+signalés par la suite de tests en moins d'une minute — c'est exactement ce pour
+quoi le filet existe.
+
+**Preuve que rien n'a bougé sur le fond** : les chiffres des trois vues du
+rapport ont été capturés avant le chantier et comparés après. Identiques au mot
+près, pour les sept plats et les huit variations de prix.
+
+**Intégration continue.** Un job `backend` : lint, format, puis les tests avec
+un vrai PostgreSQL. Sans la base, 14 tests s'ignorent et la CI validerait un
+moteur de calcul jamais exécuté.
+
+**Méthode Git.** Une branche par fonctionnalité depuis `dev`, Pull Request en
+français, commits en anglais au format conventionnel, squash and merge. Deux
+choses à savoir, apprises à la lecture d'un historique qui avait dérivé : une
+règle écrite ne tient que si les réglages du dépôt l'imposent — tant que la
+fusion classique reste autorisée, le bouton est là — et mettre une branche à
+jour par `git merge dev` laisse un commit de fusion que le squash final
+n'efface pas. Le rebase est la seule façon de garder l'historique linéaire.
+
+**Le banc d'essai, étape 2 terminée.** `bench.py` et `scripts/evaluate.py`
+complètent le barème. `make eval` sert dès maintenant, sans aucune facture : il
+valide les annotations et dit ce qu'il manque pour atteindre les critères de
+sortie de COLLECTE.md. Deux décisions dedans : le volume seul ne suffit pas —
+dix PDF propres du même jour laissent le corpus « non prêt », faute de série
+temporelle et de document difficile — et un document non extrait est compté à
+part, car le confondre avec une mauvaise lecture ferait chuter le taux pour une
+raison étrangère au modèle. Les extractions sont relues dans
+`data/extractions/`, un fichier par document : rejouer le banc après un
+changement de barème ne rappelle pas le modèle.
+
+## 11/11/2026 — Facture électronique d'abord, et un établissement inventé
+
+**Le constat.** Deux mois et demi après les premières promesses, `data/raw/`
+est vide. Attendre les factures des établissements cobayes bloquait tout le
+reste de la chaîne.
+
+**Facture électronique d'abord.** Depuis le 1er septembre 2026, toute
+entreprise reçoit ses factures par une plateforme agréée, et les grands
+fournisseurs les émettent déjà au format de la norme EN 16931. Un Factur-X est
+un PDF qui porte ses propres données en XML : quantités, prix et totaux se
+lisent sans modèle, donc sans erreur de lecture. La difficulté se déplace vers
+le rapprochement des libellés, qui reste du texte libre. La lecture papier est
+reportée, pas abandonnée : les petits fournisseurs ont jusqu'au 1er septembre
+2027.
+
+**Un établissement simulé plutôt que des factures tirées au hasard.** Des
+factures aléatoires auraient donné un rapport sans histoire. Le jeu part d'un
+restaurant-traiteur-pâtissier complet : ses ventes déterminent ses commandes,
+qui déterminent ses factures. On sait donc d'avance ce que le rapport doit
+montrer, et la chaîne se vérifie de bout en bout. Trois activités, pour
+exercer trois formes du modèle : l'assiette, le lot traiteur, la pâtisserie
+aux sous-recettes en cascade.
+
+**Des prix relevés, pas inventés.** Les tarifs de Metro sont réservés aux
+clients connectés. Les prix viennent donc des cotations publiques du Réseau
+des Nouvelles des Marchés (FranceAgriMer) : marchés de gros de Rungis et de
+Toulouse, et indicateurs mensuels des prix livrés aux professionnels. 44
+produits sur 63 sont sourcés, 19 sont des estimations marquées comme telles.
+Le prix du fichier est celui de la dernière semaine ; le chemin qui y mène est
+un scénario écrit pour que le rapport ait quelque chose à dire.
+
+**Fictif par construction, pas par convention.** Un SIREN qui échoue au
+contrôle de Luhn ne peut désigner aucune entreprise réelle, et le chargeur
+refuse un SIREN valide. Une facture factice qui ressemblerait trop à une vraie
+serait un faux ; celle-ci ne peut viser personne.
+
+**Ce que la bibliothèque a imposé.** `factur-x` écrit le XML, le contrôle
+contre le schéma officiel et sait le relire. Elle n'émet pas le profil BASIC :
+tout le jeu est au profil EN 16931. Un avoir s'y écrit en montants positifs,
+avec un code de type ; le jeu de vérité le garde en négatif, et le lecteur
+devra faire la conversion. L'unité imprimée (« CT ») devient un code (« XCT ») :
+la vérité porte le code, puisque c'est lui qui est lu.
+
+**Ce que le jeu ne prouve pas.** Ni que Gramme lit de vraies factures, ni que
+quelqu'un paiera pour. Un score parfait sur des documents que nous avons écrits
+nous-mêmes ne mesure rien d'autre que la tuyauterie.
+
+**Le tableau de bord entre dans le périmètre**, après la chaîne de lecture et
+alimenté par elle.

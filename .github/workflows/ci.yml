@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Une seule exécution par branche : les poussées successives annulent la
+# précédente au lieu de faire la queue.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Nom repris tel quel dans la protection de branche de `main` et `dev`.
+  backend:
+    runs-on: ubuntu-24.04
+
+    # Les tests de calcul et de lecture tournent dans un vrai PostgreSQL :
+    # sans lui, 14 tests s'ignorent et la CI validerait un moteur jamais
+    # exécuté. Port 5433 comme en local, pour que la configuration soit la même.
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gramme
+          POSTGRES_PASSWORD: gramme
+          POSTGRES_DB: gramme
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U gramme"
+          --health-interval 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://gramme:gramme@localhost:5433/gramme
+      DEMO_DATABASE_URL: postgresql://gramme:gramme@localhost:5433/gramme_demo
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the dependencies
+        run: uv sync --locked
+
+      - name: Check lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Apply the migrations
+        run: |
+          for file in db/migrations/*.sql; do
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+      - name: Build the demonstration database
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE gramme_demo"
+          for file in db/migrations/*.sql db/seed/demo.sql; do
+            psql "$DEMO_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$file"
+          done
+
+      - name: Run the tests
+        run: uv run pytest

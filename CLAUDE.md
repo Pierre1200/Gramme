@@ -10,22 +10,29 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (20/09/2026) : fondations et démo écrites, auditées et testées ;
-extraction pas commencée.**
+**État actuel (11/11/2026) : fondations, démo et jeu de factures factices
+écrits et testés ; lecture des factures pas commencée.**
 
-- Écrit, 110 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
-  `scripts/classer.py`, schéma SQL (`001_schema.sql`, `002_rapport.sql`)
+- Écrit, 158 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+  `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
+  (`001_schema.sql`, `002_rapport.sql`)
+- Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
+  `simulation.py`, `facturx.py`, `scripts/generate_corpus.py` — voir « Jeu de
+  factures factices » plus bas
 - Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
-- Pas encore écrit : `scripts/evaluate.py` (appelé par `make eval`), `llm.py`,
-  `extract.py`, écriture en base dans `db.py`, `normalize.py`, `report.py`
-- Aucune facture annotée dans `data/truth/`, aucun appel à un modèle
+- Pas encore écrit : le lecteur de Factur-X, l'écriture en base dans `db.py`,
+  `normalize.py`, `llm.py`, `report.py`, le tableau de bord ; `extract.py`
+  (lecture papier) est reporté
+- Aucune vraie facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
 - Ouvert : la méthode de coût des carcasses (voir « Découpe de carcasse »),
   paramètres à confirmer sur les premières factures de l'hôtel-restaurant
 - Documentation : `README.md` (vitrine), `JOURNAL.md` (les décisions et leurs
   raisons), `AUDIT.md` (audit du 20/09/2026), `COLLECTE.md` (jeu de vérité)
+- Intégration continue : `.github/workflows/ci.yml`, job `backend` — lint,
+  format et tous les tests avec un vrai PostgreSQL
 
 ## Comment je veux travailler
 
@@ -39,7 +46,15 @@ Toujours valables :
   décisions, pas recevoir un fichier fini.
 - **Utilise le mode plan** pour toute tâche touchant plusieurs fichiers.
 - Avance par étapes relisibles, et fais le point entre chacune.
-- Commente généreusement : le code doit se relire sans toi.
+- Commente le POURQUOI, pas le récit. Un commentaire dit pourquoi le code est
+  ainsi ; il ne raconte pas l'histoire de la décision.
+- **Explique chaque terme technique à chaque fois que tu l'emploies**, dans le
+  message où il apparaît : sigle développé, puis ce que ça fait concrètement et
+  pourquoi on l'utilise. Un mot que je ne sais pas expliquer à l'oral est un mot
+  que je ne dois pas rendre.
+- **Pas de méta-commentaire dans les livrables.** Contraintes internes, temps
+  disponible, niveau : ça ne figure jamais dans un document rendu. On documente
+  les décisions et leurs motifs techniques, pas nos circonstances.
 - Préviens-moi quand je pars dans une mauvaise direction, même si je
   n'ai rien demandé. Le désaccord argumenté est plus utile que
   l'exécution docile.
@@ -49,6 +64,54 @@ En pause tant que Claude écrit (mode apprentissage) :
   puis la suivante. Si tu proposes plus de 60 lignes d'un coup, découpe.
 - Propose des indices avant des solutions complètes. Je bloque volontiers
   cinq minutes si ça me fait comprendre.
+
+## Méthode Git
+
+- **Une branche par fonctionnalité**, jamais par personne. Nommage :
+  `feat/…`, `fix/…`, `chore/…`, `ci/…`, `docs/…`.
+- **Les branches partent de `dev` et y retournent** par Pull Request. `dev` est
+  la branche d'intégration ; `main` reçoit `dev` quand l'ensemble est stable.
+- **`main` et `dev` sont protégées** : Pull Request obligatoire, une
+  approbation, et le contrôle `backend` vert.
+- **Les Pull Requests sont rédigées en français.** Le code, les identifiants et
+  les messages de commit restent en anglais.
+- **Messages de commit au format conventionnel, avec portée** :
+  `feat(scoring): count missing lines in the wrong rate`.
+- **Squash and merge**, puis suppression de la branche. À régler aussi dans les
+  réglages GitHub du dépôt : n'autoriser que le squash, sinon le bouton de
+  fusion classique reste disponible et la règle écrite ne tient pas.
+- **Mettre une branche à jour se fait par rebase**, pas par `merge dev`. Un
+  `git merge dev` dans une branche de travail laisse un commit de fusion que le
+  squash final n'efface pas, et l'historique cesse d'être linéaire.
+- **C'est Pierre qui pousse.** J'écris le code dans les fichiers, mais je ne
+  commite ni ne pousse jamais.
+
+## Langue du code
+
+**Tout identifiant est en anglais** : fonctions, classes, variables, constantes,
+fichiers, vues et colonnes SQL, classes CSS, noms de tests. Les docstrings, les
+commentaires et les textes affichés à l'utilisateur restent **en français**.
+
+Deux exceptions assumées, pour des termes sans équivalent anglais exact : les
+valeurs `"ht"` et `"ttc"` (mentions portées sur les documents eux-mêmes) et les
+niveaux `ok` / `vigilance` / `alerte` (affichés tels quels).
+
+| Terme métier | Identifiant | Définition |
+|---|---|---|
+| Facture | `invoice` | Le document reçu d'un fournisseur |
+| Ligne de facture | `invoice_line` | Une ligne d'article sur ce document |
+| Libellé brut | `raw_label` | Le texte imprimé sur la ligne, avant tout rapprochement |
+| Ingrédient | `ingredient` | L'intrant canonique du référentiel, indépendant du fournisseur |
+| Rendement, parage | `yield_ratio` | Part utilisable d'un produit brut, portée par le composant |
+| Prix relevé | `price_point` | Une observation de prix, jamais modifiée |
+| Ratio | `ratio` | Coût matière rapporté au prix de vente HT — terme conservé |
+| Marge brute | `margin_per_portion` | Ce qui reste par portion, en euros |
+| Dérive | `drift_points` | Écart de ratio en points sur six semaines |
+| Jeu de vérité | `truth` | Les annotations faites à la main, référence du banc d'essai |
+| Barème | `scoring` | Ce que « réussir » veut dire, défini avant l'extracteur |
+| File de validation | `to_review` | Champs sous le seuil de confiance, à relire |
+| Empreinte | `fingerprint` | SHA-256 du contenu, base de l'anti-doublon |
+| Illisible | `unreadable` | Présent sur le papier, non déchiffré |
 
 ## Décisions d'architecture — non négociables
 
@@ -195,13 +258,31 @@ valeur relative par défaut.
 
 ## Ordre de construction
 
-Strictement séquentiel. Ne propose pas d'étape ultérieure tant que la
-précédente n'est pas finie. Seule exception : la démo, qui avance `db.py`
-(étape 5) — voir « Démo » plus bas.
+**Révisé le 11/11/2026 : facture électronique d'abord.** Depuis le
+1er septembre 2026 les factures arrivent au format Factur-X, dont les données
+se lisent sans modèle. La suite se construit sur le jeu factice, dans cet
+ordre, sans proposer une étape tant que la précédente n'est pas finie :
+
+1. Le lecteur de Factur-X (XML → `RawInvoice`), dans `facturx.py`
+2. L'écriture en base des factures lues, dans `db.py`
+3. `normalize.py` — rapprocher les libellés des ingrédients : c'est là que le
+   modèle de langage sert, donc `llm.py` arrive avec lui
+4. Le tableau de bord, alimenté par cette chaîne et non par un seed
+5. `report.py`
+
+La lecture papier (étapes 3 et 4 de la liste d'origine ci-dessous) est
+reportée, pas abandonnée : les petits fournisseurs ne sont tenus d'émettre en
+électronique qu'au 1er septembre 2027. Son code reste en place, sans être
+développé davantage.
+
+Liste d'origine, pour mémoire :
 
 1. `models.py` — contrats Pydantic (Invoice, InvoiceLine, confiance par champ)
-2. `scripts/evaluate.py` — le banc d'essai, **avant** l'extracteur
-   (barème écrit : `truth.py`, `scoring.py` ; reste le script lui-même)
+2. `scripts/evaluate.py` — le banc d'essai, **avant** l'extracteur. **Fait**
+   (`truth.py`, `scoring.py`, `bench.py`). `make eval` affiche aussi l'état du
+   corpus face aux critères de sortie de COLLECTE.md, utile pendant la collecte.
+   Les extractions seront lues dans `data/extractions/`, un JSON par document,
+   appariées par `source_file` : le banc se rejoue sans rappeler le modèle.
 3. `llm.py` — client + instrumentation
 4. `extract.py` — première extraction, itérer sur le prompt
 5. schéma SQL + `db.py` — **lecture faite pour la démo** (`002_rapport.sql`,
@@ -278,12 +359,54 @@ db/seed/demo.sql               chiffres fictifs datés d'aujourd'hui, gramme_dem
 src/gramme/config.py           adresses des deux bases, lues dans .env
 src/gramme/db.py               lire_rapport() : un seul instantané, aucun calcul
 src/gramme/web.py              FastAPI : GET /rapport, GET et POST /envoyer
-templates/                     base.html, rapport.html, envoyer.html
+templates/                     base.html, report.html, upload.html
 ```
 
 Le seed vit dans `db/seed/`, **pas** dans `db/migrations/` : tout ce qui est
 dans `migrations/` est appliqué automatiquement au premier démarrage de
 Postgres, y compris sur la base principale.
+
+## Jeu de factures factices, décidé le 11/11/2026
+
+**Pourquoi.** Les factures des établissements cobayes n'arrivent pas. Plutôt
+que d'attendre, toute la chaîne se construit sur un établissement inventé.
+
+**Ce que c'est.** `corpus/restaurant.toml` décrit « Maison Trébuchet » :
+restaurant, traiteur salé, pâtisserie ; 57 ingrédients, 38 recettes, 7
+fournisseurs. `simulation.py` en tire les ventes, les commandes, puis environ
+440 factures sur douze mois ; `make corpus` les écrit en PDF Factur-X dans
+`data/synthetic/`, chacune avec son annotation de vérité.
+
+**Règles.**
+
+- **Ce que le jeu prouve, et ce qu'il ne prouve pas.** Il prouve que la chaîne
+  fonctionne de bout en bout, avec une vérité exacte. Il ne prouve ni que
+  Gramme lit de vraies factures, ni que quelqu'un paiera. Ne jamais présenter
+  un score obtenu dessus comme une mesure de qualité.
+- **Jamais mélangé aux vraies factures.** Le factice vit dans
+  `data/synthetic/`, les vraies dans `data/raw/` : `make eval
+  CORPUS=data/synthetic` choisit l'un ou l'autre, jamais les deux.
+- **Fictif par construction.** Aucune enseigne réelle ; les SIREN échouent au
+  contrôle de Luhn (`world.py` refuse un SIREN valide) ; téléphones dans la
+  tranche réservée à la fiction ; mention « Document fictif » sur chaque PDF
+  et dans chaque XML.
+- **Prix réels, trajectoires inventées.** Le prix du fichier est un prix relevé
+  en octobre-novembre 2026 (cotations RNM de FranceAgriMer, catalogues Metro),
+  appliqué la dernière semaine ; chaque produit nomme sa source (`src`), et
+  `estimate` signale ceux qui n'en ont pas. Les hausses qui y mènent sont un
+  scénario.
+- **Dates relatives à aujourd'hui**, comme le seed de démo : relancer `make
+  corpus` avant une démonstration.
+- **Le simulateur calcule des montants en Python** : il joue le logiciel de
+  facturation des fournisseurs, extérieur au produit. La décision 2 vaut pour
+  Gramme, dont les calculs restent en SQL.
+- `make corpus` demande Chrome sur la machine ; les tests, non.
+
+**Limites connues.** Le PDF imprimé par Chrome n'est pas un PDF/A-3 certifié.
+Le XML est contrôlé contre le schéma officiel, pas contre les règles de gestion
+de la norme (elles demandent un serveur de validation) : nos tests vérifient
+sommes et TVA. La bibliothèque n'émet pas le profil BASIC : tout est au profil
+EN 16931.
 
 ## Contexte terrain
 
@@ -305,11 +428,13 @@ Postgres, y compris sur la base principale.
 
 - Python 3.12, `uv` (jamais pip/poetry directement)
 - Pydantic v2, psycopg 3, SDK `openai` pointé vers MiniMax
+- `factur-x` (Akretion, BSD) pour écrire et relire les factures électroniques,
+  validée le 11/11/2026 ; tout passe par `src/gramme/facturx.py`
 - PostgreSQL 16 via Docker Compose, port 5433
 - ruff (lint + format), pytest, pre-commit
 - Modèle par défaut : MiniMax-M3, base_url `https://api.minimax.io/v1`
 
-Commandes : `make up`, `make test`, `make lint`, `make eval`, `make demo-db`, `make demo`
+Commandes : `make help` les liste toutes.
 
 Démo : FastAPI, Jinja2, uvicorn, et **python-multipart** (requis par FastAPI
 pour recevoir des fichiers). Validées et installées le 15/09/2026.
@@ -339,10 +464,17 @@ public » : données de prospection de `COLLECTE.md`, contexte commercial des de
 
 La V1 fait UNE chose : factures → prix → coûts matière → rapport du lundi.
 
-Hors périmètre pour l'instant : dashboard, gestion de stock, inventaires,
-connexion caisse, multi-établissements, appli mobile, authentification
+**Le tableau de bord est entré dans le périmètre le 11/11/2026** : il vient
+après la chaîne de lecture (voir « Ordre de construction »), jamais avant.
+
+Hors périmètre pour l'instant : gestion de stock, inventaires, connexion
+caisse, multi-établissements, appli mobile, authentification
 multi-utilisateurs, prévision de production. Si je dérive vers ça,
 rappelle-le-moi.
+
+**Avant toute mise en ligne sur un serveur** : la page d'envoi n'a aucune
+authentification, elle ne s'expose pas telle quelle ; et seul le jeu factice a
+sa place sur une machine publique.
 
 La démo en deux pages (voir plus haut) est une exception bornée et datée,
 pas une ouverture du périmètre : la page d'envoi n'est ni une appli mobile

@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{#
+  Aucun calcul dans ce template (décision 2). Chaque nombre affiché sort tel
+  quel des vues report_* ; les filtres ne font que la mise en forme. Les seules
+  comparaisons servent au pluriel et au choix d'une couleur.
+#}
+{% block title %}Rapport du lundi{% endblock %}
+
+{% block style %}
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tile {
+    border-radius: var(--radius); padding: 14px 12px 12px; min-height: 108px;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+  }
+  .tile__number { font-size: 2.4rem; font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+  .tile__label { font-size: .8125rem; font-weight: 700; line-height: 1.2; }
+  .tile--tomato  { background: var(--tomato); color: #fff; box-shadow: 0 14px 28px -16px rgba(228, 87, 46, .9); }
+  .tile--saffron { background: var(--saffron-soft); color: var(--saffron-text); }
+  .tile--ink     { background: var(--ink); color: var(--cream); }
+
+  .dishes { display: grid; gap: 12px; }
+  @media (min-width: 680px) { .dishes { grid-template-columns: 1fr 1fr; } }
+
+  .dish { position: relative; overflow: hidden; padding: 16px 16px 14px 20px; }
+  .dish::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--olive); }
+  .dish--alerte::before    { background: var(--tomato); }
+  .dish--vigilance::before { background: var(--saffron); }
+  .dish__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .dish h3 { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.3; }
+  .dish__left { margin: 12px 0 12px; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; }
+  .dish__amount { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .dish__caption { font-size: .875rem; color: var(--muted); }
+
+  /* Jauge du ratio, sur une échelle de 0 à 100 % : la barre montre le ratio
+     d'aujourd'hui, le repère sombre celui d'il y a six semaines. */
+  .gauge { position: relative; height: 10px; border-radius: 999px; background: var(--track); }
+  .gauge__bar { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--olive); }
+  .dish--alerte .gauge__bar    { background: var(--tomato); }
+  .dish--vigilance .gauge__bar { background: var(--saffron); }
+  .gauge__marker {
+    position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px;
+    border-radius: 2px; background: var(--ink); opacity: .55;
+  }
+  .dish__detail { margin: 10px 0 0; font-size: .8125rem; color: var(--muted); }
+  .dish__detail strong { color: var(--ink); font-weight: 700; }
+
+  .price-list { padding: 2px 16px; }
+  .price {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 0; border-bottom: 1px solid var(--border);
+  }
+  .price:last-child { border-bottom: 0; }
+  .price__name { margin: 0; font-weight: 700; }
+  .price__detail { margin: 2px 0 0; font-size: .8125rem; color: var(--muted); }
+
+  .flags { display: grid; gap: 10px; }
+  .flag { display: flex; gap: 12px; padding: 14px 16px; }
+  .flag p { margin: 0; }
+  .flag__icon {
+    flex: none; width: 38px; height: 38px; border-radius: 12px;
+    display: grid; place-items: center; font-weight: 800; font-size: 1.1rem;
+    background: var(--saffron-soft); color: var(--saffron-text);
+  }
+  .flag__title { font-weight: 700; margin-bottom: 2px !important; }
+  .flag code {
+    font: 600 .8125rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--track); padding: .15em .45em; border-radius: 6px;
+  }
+{% endblock %}
+
+{% block content %}
+{% set summary = report.summary %}
+
+<section class="header">
+  <p class="eyebrow">Rapport du lundi</p>
+  <h1>Semaine du {{ monday | day_month }}</h1>
+  <p class="subtitle">Ce qui a bougé sur vos coûts ces six dernières semaines.</p>
+</section>
+
+<section class="tiles" aria-label="En bref">
+  <div class="tile tile--tomato">
+    <span class="tile__number figure">{{ summary.dishes_on_alert }}</span>
+    <span class="tile__label">plat{{ 's' if summary.dishes_on_alert > 1 }} à surveiller</span>
+  </div>
+  <div class="tile tile--saffron">
+    <span class="tile__number figure">{{ summary.prices_up }}</span>
+    <span class="tile__label">prix en hausse</span>
+  </div>
+  <div class="tile tile--ink">
+    <span class="tile__number figure">{{ summary.items_to_check }}</span>
+    <span class="tile__label">point{{ 's' if summary.items_to_check > 1 }} à vérifier</span>
+  </div>
+</section>
+
+<h2 class="section-title">Vos plats <small>marge par portion</small></h2>
+<div class="dishes">
+  {% for dish in report.margins %}
+  <article class="card dish dish--{{ dish.level }}">
+    <div class="dish__top">
+      <h3>{{ dish.recipe }}</h3>
+      {% if dish.level == 'alerte' %}
+        <span class="pill pill--tomato figure">{{ dish.drift_points | drift }}</span>
+      {% elif dish.level == 'vigilance' %}
+        <span class="pill pill--saffron figure">{{ dish.drift_points | drift }}</span>
+      {% else %}
+        <span class="pill pill--olive">Stable</span>
+      {% endif %}
+    </div>
+
+    <p class="dish__left">
+      <span class="dish__amount figure">{{ dish.margin_per_portion | euros }}</span>
+      <span class="dish__caption">vous reste, contre {{ dish.margin_per_portion_before | euros }} il y a 6 semaines</span>
+    </p>
+
+    <div class="gauge" role="img"
+         aria-label="Ratio de {{ dish.ratio | percent }}, contre {{ dish.ratio_before | percent }} il y a six semaines">
+      <span class="gauge__bar" style="width: {{ dish.ratio }}%"></span>
+      <span class="gauge__marker" style="left: {{ dish.ratio_before }}%"></span>
+    </div>
+
+    <p class="dish__detail figure">
+      Ratio <strong>{{ dish.ratio | percent }}</strong> (était {{ dish.ratio_before | percent }})
+      · coût {{ dish.cost_per_portion | euros }} · vendu {{ dish.selling_price_incl_vat | euros }} TTC
+    </p>
+  </article>
+  {% else %}
+  <p class="card empty">Aucun plat enregistré pour l'instant.</p>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">Les prix qui ont bougé <small>sur 6 semaines</small></h2>
+<div class="card price-list">
+  {% for item in report.price_changes %}
+  <div class="price">
+    <div>
+      <p class="price__name">{{ item.ingredient }}</p>
+      <p class="price__detail figure">{{ item.price_before | euros }} → {{ item.price_after | euros }} / {{ item.unit }}</p>
+    </div>
+    <span class="pill {{ 'pill--tomato' if item.change_pct > 0 else 'pill--olive' }} figure">
+      {{ item.change_pct | change }}
+    </span>
+  </div>
+  {% else %}
+  <p class="empty">Aucun prix n'a bougé de plus de 3 %.</p>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">À vérifier</h2>
+<div class="flags">
+  {% for flag in report.flags %}
+  <article class="card flag">
+    {% if flag.reason == 'label_to_confirm' %}
+      <span class="flag__icon" aria-hidden="true">?</span>
+      <div>
+        <p class="flag__title">Un produit à confirmer</p>
+        <p><code>{{ flag.label }}</code></p>
+        <p class="muted">{{ flag.supplier }} · de quel produit s'agit-il ?</p>
+      </div>
+    {% else %}
+      <span class="flag__icon" aria-hidden="true">≠</span>
+      <div>
+        <p class="flag__title">Facture {{ flag.label }} du {{ flag.invoice_date | short_date }}</p>
+        <p>Le total ne correspond pas à la somme des lignes : écart de <strong class="figure">{{ flag.gap | euros }}</strong>.</p>
+        <p class="muted">{{ flag.supplier }}</p>
+      </div>
+    {% endif %}
+  </article>
+  {% else %}
+  <p class="card empty">Rien à vérifier cette semaine.</p>
+  {% endfor %}
+</div>
+
+<p class="note">
+  Exemple de démonstration : chiffres fictifs, calculés par le moteur réel.<br>
+  <a href="/envoyer">Envoyer une facture →</a>
+</p>
+{% endblock %}

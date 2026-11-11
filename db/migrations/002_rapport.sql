@@ -43,7 +43,7 @@ WITH RECURSIVE cost_tree AS (
       AND   NOT (rc.child_recipe_id = ANY(ct.path))   -- anti-cycle
       AND   ct.depth < 10                             -- garde-fou
 ),
-prix_a_date AS (
+price_at_date AS (
     SELECT DISTINCT ON (sp.ingredient_id)
            sp.ingredient_id,
            pp.price_per_base_unit
@@ -65,7 +65,7 @@ JOIN   recipe_component rc ON rc.parent_recipe_id = ct.recipe_id
 -- LIMITE CONNUE : jointure interne. Un ingrédient sans prix à cette date
 -- DISPARAÎT du total, sans avertissement : le coût est sous-estimé.
 -- Documenté dans CLAUDE.md, verrouillé par tests/test_cost.py, pas corrigé.
-JOIN   prix_a_date px ON px.ingredient_id = rc.ingredient_id;
+JOIN   price_at_date px ON px.ingredient_id = rc.ingredient_id;
 $$ LANGUAGE SQL STABLE;
 
 
@@ -98,7 +98,7 @@ SELECT  r.id,
         ROUND(
             r.selling_price_ttc / (1 + r.vat_rate)
             - recipe_cost(r.id) / NULLIF(r.portions, 0)
-        , 2)                                                  AS marge_brute_ht
+        , 2)                                                  AS gross_margin_ht
 FROM    recipe r
 WHERE   r.is_sellable;
 
@@ -116,61 +116,61 @@ WHERE   r.is_sellable;
 -- Le prix de vente d'il y a 6 semaines n'est pas historisé : les deux ratios
 -- sont calculés sur le prix de vente actuel. L'écart mesure donc bien la
 -- dérive des coûts, pas un changement de carte.
-CREATE OR REPLACE VIEW rapport_marges AS
+CREATE OR REPLACE VIEW report_margins AS
 WITH base AS (
     SELECT  r.id,
             r.name,
             r.portions,
             r.selling_price_ttc,
-            r.selling_price_ttc / (1 + r.vat_rate)                           AS prix_ht,
-            recipe_cost(r.id) / NULLIF(r.portions, 0)                        AS cout,
-            recipe_cost_at(r.id, CURRENT_DATE - 42) / NULLIF(r.portions, 0)  AS cout_avant
+            r.selling_price_ttc / (1 + r.vat_rate)                           AS price_excl_vat,
+            recipe_cost(r.id) / NULLIF(r.portions, 0)                        AS cost,
+            recipe_cost_at(r.id, CURRENT_DATE - 42) / NULLIF(r.portions, 0)  AS cost_before
     FROM    recipe r
     WHERE   r.is_sellable
 ),
 ratios AS (
     SELECT  base.*,
-            100 * cout       / NULLIF(prix_ht, 0) AS ratio,
-            100 * cout_avant / NULLIF(prix_ht, 0) AS ratio_avant
+            100 * cost        / NULLIF(price_excl_vat, 0) AS ratio,
+            100 * cost_before / NULLIF(price_excl_vat, 0) AS ratio_before
     FROM    base
 )
-SELECT  id                                  AS recette_id,
-        name                                AS recette,
+SELECT  id                                  AS recipe_id,
+        name                                AS recipe,
         portions,
-        selling_price_ttc                   AS prix_vente_ttc,
-        ROUND(prix_ht, 2)                   AS prix_vente_ht,
-        ROUND(cout, 2)                      AS cout_portion,
-        ROUND(prix_ht - cout, 2)            AS marge_portion,
-        ROUND(prix_ht - cout_avant, 2)      AS marge_portion_avant,
+        selling_price_ttc                   AS selling_price_incl_vat,
+        ROUND(price_excl_vat, 2)                   AS selling_price,
+        ROUND(cost, 2)                      AS cost_per_portion,
+        ROUND(price_excl_vat - cost, 2)            AS margin_per_portion,
+        ROUND(price_excl_vat - cost_before, 2)      AS margin_per_portion_before,
         ROUND(ratio, 1)                     AS ratio,
-        ROUND(ratio_avant, 1)               AS ratio_avant,
-        ROUND(ratio - ratio_avant, 1)       AS ecart_points,
+        ROUND(ratio_before, 1)               AS ratio_before,
+        ROUND(ratio - ratio_before, 1)       AS drift_points,
         -- Seuils de présentation, en points de ratio gagnés sur 6 semaines.
         CASE
-            WHEN ratio - ratio_avant >= 2.0 THEN 'alerte'
-            WHEN ratio - ratio_avant >= 0.5 THEN 'vigilance'
+            WHEN ratio - ratio_before >= 2.0 THEN 'alerte'
+            WHEN ratio - ratio_before >= 0.5 THEN 'vigilance'
             ELSE 'ok'
-        END                                 AS niveau
+        END                                 AS level
 FROM    ratios
-ORDER BY ratio - ratio_avant DESC, name;
+ORDER BY ratio - ratio_before DESC, name;
 
 
 -- Les prix qui ont bougé de plus de 3 % sur 6 semaines (seuil de price_drift),
 -- ramenés de l'unité de base à l'unité qu'on lit sur une mercuriale :
 -- €/g -> €/kg, €/ml -> €/L. La conversion est un calcul, donc elle est ici.
-CREATE OR REPLACE VIEW rapport_variations AS
+CREATE OR REPLACE VIEW report_price_changes AS
 SELECT  d.ingredient_id,
         d.ingredient_name                    AS ingredient,
-        ROUND(d.old_price * u.facteur, 2)    AS prix_avant,
-        ROUND(d.new_price * u.facteur, 2)    AS prix_apres,
-        u.libelle                            AS unite,
-        d.variation_pct
+        ROUND(d.old_price * u.factor, 2)    AS price_before,
+        ROUND(d.new_price * u.factor, 2)    AS price_after,
+        u.label                            AS unit,
+        d.variation_pct                      AS change_pct
 FROM    price_drift(42) d
 JOIN    ingredient i ON i.id = d.ingredient_id
 JOIN    (VALUES ('g'::base_unit,    1000, 'kg'),
                 ('ml'::base_unit,   1000, 'L'),
                 ('unit'::base_unit,    1, 'pièce')
-        ) AS u(base_unit, facteur, libelle) ON u.base_unit = i.base_unit
+        ) AS u(base_unit, factor, label) ON u.base_unit = i.base_unit
 ORDER BY d.variation_pct DESC;
 
 
@@ -180,19 +180,19 @@ ORDER BY d.variation_pct DESC;
 --  - une facture dont la somme des lignes ne retombe pas sur le total HT.
 --    Tolérance 0,05 € : la même que INVOICE_TOTAL_TOLERANCE dans models.py.
 --    Si l'une bouge, l'autre doit suivre.
-CREATE OR REPLACE VIEW rapport_attention AS
-SELECT  'libelle_a_confirmer'::TEXT  AS motif,
-        sp.raw_label                 AS libelle,
-        s.name                       AS fournisseur,
-        NULL::DATE                   AS date_facture,
-        NULL::NUMERIC                AS ecart
+CREATE OR REPLACE VIEW report_flags AS
+SELECT  'label_to_confirm'::TEXT  AS reason,
+        sp.raw_label                 AS label,
+        s.name                       AS supplier,
+        NULL::DATE                   AS invoice_date,
+        NULL::NUMERIC                AS gap
 FROM    supplier_product sp
 JOIN    supplier s ON s.id = sp.supplier_id
 WHERE   sp.status = 'pending'
 
 UNION ALL
 
-SELECT  'total_incoherent',
+SELECT  'total_mismatch',
         COALESCE(i.invoice_number, '(sans numéro)'),
         s.name,
         i.invoice_date,
@@ -208,7 +208,7 @@ HAVING  ABS(COALESCE(SUM(il.line_total_ht), 0) - i.total_ht) > 0.05;
 -- Les trois compteurs affichés en tête de rapport. Seules les ALERTES comptent
 -- comme plats à surveiller : la vigilance reste visible plat par plat, mais
 -- l'additionner gonflerait la tuile (« 5 plats sur 7 ») et banaliserait l'alerte.
-CREATE OR REPLACE VIEW rapport_resume AS
-SELECT  (SELECT count(*) FROM rapport_marges     WHERE niveau = 'alerte')  AS plats_en_alerte,
-        (SELECT count(*) FROM rapport_variations WHERE variation_pct > 0)  AS prix_en_hausse,
-        (SELECT count(*) FROM rapport_attention)                           AS points_a_verifier;
+CREATE OR REPLACE VIEW report_summary AS
+SELECT  (SELECT count(*) FROM report_margins     WHERE level = 'alerte')  AS dishes_on_alert,
+        (SELECT count(*) FROM report_price_changes WHERE change_pct > 0)  AS prices_up,
+        (SELECT count(*) FROM report_flags)                           AS items_to_check;

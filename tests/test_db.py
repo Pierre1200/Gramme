@@ -11,40 +11,36 @@ peuvent être retouchés sans que le code soit faux.
 import pytest
 
 from gramme.config import get_settings
-from gramme.db import BaseInjoignable, lire_rapport
+from gramme.db import DatabaseUnreachable, read_report
 
 
 @pytest.fixture(scope="module")
-def rapport():
+def report():
     try:
-        return lire_rapport(get_settings().demo_database_url)
-    except BaseInjoignable:
+        return read_report(get_settings().demo_database_url)
+    except DatabaseUnreachable:
         pytest.skip("gramme_demo injoignable : lancer `make up` puis `make demo-db`")
 
 
-def test_toutes_les_sections_sont_alimentees(rapport):
-    assert rapport.marges
-    assert rapport.variations
-    assert rapport.attention
+def test_every_section_is_filled(report):
+    assert report.margins
+    assert report.price_changes
+    assert report.flags
 
 
-def test_la_tuile_correspond_a_la_liste(rapport):
+def test_the_tile_matches_the_list(report):
     # Lu dans un seul instantané : l'en-tête et les listes décrivent le même état.
-    assert rapport.resume.plats_en_alerte == len(
-        [m for m in rapport.marges if m.niveau == "alerte"]
-    )
-    assert rapport.resume.prix_en_hausse == len(
-        [v for v in rapport.variations if v.variation_pct > 0]
-    )
-    assert rapport.resume.points_a_verifier == len(rapport.attention)
+    assert report.summary.dishes_on_alert == len([m for m in report.margins if m.level == "alerte"])
+    assert report.summary.prices_up == len([c for c in report.price_changes if c.change_pct > 0])
+    assert report.summary.items_to_check == len(report.flags)
 
 
-def test_niveaux_connus(rapport):
+def test_known_levels_only(report):
     # Le template associe une couleur à chaque niveau : un niveau inconnu
     # s'afficherait sans style.
-    assert {m.niveau for m in rapport.marges} <= {"ok", "vigilance", "alerte"}
+    assert {m.level for m in report.margins} <= {"ok", "vigilance", "alerte"}
 
 
-def test_plats_tries_du_plus_derivant_au_plus_stable(rapport):
-    ecarts = [m.ecart_points for m in rapport.marges]
-    assert ecarts == sorted(ecarts, reverse=True)
+def test_dishes_are_sorted_from_most_drifting_to_most_stable(report):
+    drifts = [m.drift_points for m in report.margins]
+    assert drifts == sorted(drifts, reverse=True)
