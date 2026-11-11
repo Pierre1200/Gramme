@@ -10,12 +10,20 @@ fichier bouge.
 """
 
 import io
+from datetime import date
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import facturx
+from pypdf.errors import PyPdfError
 
-from gramme.simulation import Invoice
-from gramme.world import World
+from gramme.models import Extracted, FieldStatus, RawAdjustment, RawInvoice, RawInvoiceLine
+
+if TYPE_CHECKING:
+    # Le lecteur fait partie du produit, le simulateur non : l'écriture ne
+    # doit pas le faire charger à chaque facture lue.
+    from gramme.simulation import Invoice
+    from gramme.world import World
 
 # Le profil EN 16931 porte le détail des lignes, dont Gramme ne peut pas se
 # passer. La bibliothèque ne sait pas émettre le profil BASIC.
@@ -43,6 +51,14 @@ UNIT_CODES = {
     "BID": "XJY",  # bidon
     "CS": "XCR",  # casier
 }
+
+
+class NotFacturX(Exception):
+    """Le document n'est pas un Factur-X : aucun XML de facture à l'intérieur.
+
+    Ce n'est pas une panne. C'est le signal qu'un document relève de la
+    lecture papier, pas de celle-ci.
+    """
 
 
 def unit_code(unit: str) -> str:
@@ -76,7 +92,7 @@ def _party(party) -> dict:
     }
 
 
-def invoice_data(world: World, invoice: Invoice) -> dict:
+def invoice_data(world: "World", invoice: "Invoice") -> dict:
     """Les données de la facture, sous les codes de la norme (BT-1, BG-25...).
 
     Un avoir s'écrit en montants POSITIFS : c'est son code de type (381) qui
@@ -154,7 +170,7 @@ def invoice_data(world: World, invoice: Invoice) -> dict:
     return data
 
 
-def build_xml(world: World, invoice: Invoice) -> bytes:
+def build_xml(world: "World", invoice: "Invoice") -> bytes:
     """Le XML de la facture, contrôlé contre le schéma officiel.
 
     Le schéma vérifie la structure. Les règles de gestion de la norme (sommes,
@@ -180,6 +196,85 @@ def embed(pdf: bytes, xml: bytes, title: str, author: str) -> bytes:
 
 
 def extract_xml(pdf: bytes) -> bytes:
-    """Ressort le XML d'un PDF Factur-X, contrôlé contre le schéma officiel."""
-    _, xml = facturx.get_xml_from_pdf(io.BytesIO(pdf), check_xsd=True)
+    """Ressort le XML d'un PDF Factur-X, contrôlé contre le schéma officiel.
+
+    Un XML présent mais refusé par le schéma lève l'erreur de la bibliothèque,
+    à ne pas confondre avec `NotFacturX` : le premier est un document cassé, le
+    second un document d'une autre nature.
+    """
+    try:
+        _, xml = facturx.get_xml_from_pdf(io.BytesIO(pdf), check_xsd=True)
+    except PyPdfError as e:
+        raise NotFacturX("le fichier n'est pas un PDF lisible") from e
+    if not xml:
+        raise NotFacturX("le PDF ne contient pas de XML Factur-X")
     return xml
+
+
+def _read[T](type_: type[T], text: str | None, convert=None, sign: int = 1) -> Extracted[T]:
+    """Un champ du XML : lu avec certitude, ou absent. Jamais deviné."""
+    if text is None or text == "":
+        return Extracted[type_](status=FieldStatus.ABSENT)
+    value = (convert or type_)(text)
+    if sign < 0:
+        value = -value
+    return Extracted[type_](
+        status=FieldStatus.READ, value=value, raw_text=str(text), confidence=1.0
+    )
+
+
+def read_xml(xml: bytes) -> RawInvoice:
+    """Le XML d'une facture électronique, rendu dans le contrat de lecture.
+
+    Aucun montant n'est déduit : le total d'une ligne est celui que porte le
+    XML, pas quantité × prix. C'est ce qui garde le recoupement arithmétique
+    utile, même sur un document structuré.
+    """
+    data = facturx.parse_ubl_cii_xml(xml, check_xsd=False)  # contrôlé à l'extraction
+
+    # Un avoir s'écrit en positif avec un code de type ; l'historique de prix
+    # l'attend en négatif.
+    sign = -1 if facturx.is_credit_note(data) else 1
+
+    lines = [
+        RawInvoiceLine(
+            line_no=number,
+            raw_label=entry["BT-153"],
+            supplier_ref=entry.get("BT-155"),
+            qty=_read(Decimal, entry.get("BT-129"), sign=sign),
+            raw_unit=_read(str, entry.get("BT-130")),
+            unit_price_ht=_read(Decimal, entry.get("BT-146")),
+            line_total_ht=_read(Decimal, entry.get("BT-131"), sign=sign),
+        )
+        for number, entry in enumerate(data.get("BG-25") or [], start=1)
+    ]
+
+    # BG-20 : remises, à soustraire. BG-21 : frais, à ajouter.
+    adjustments = [
+        RawAdjustment(
+            label=entry.get("reason") or default_label,
+            amount_ht=_read(Decimal, entry.get("amount"), sign=sign * direction),
+        )
+        for group, direction, default_label in (("BG-20", -1, "Remise"), ("BG-21", 1, "Frais"))
+        for entry in data.get(group) or []
+    ]
+
+    issued_on = data.get("BT-2")
+    return RawInvoice(
+        supplier_name=_read(str, (data.get("BG-4") or {}).get("name")),
+        invoice_number=_read(str, data.get("BT-1")),
+        invoice_date=_read(
+            date,
+            issued_on.isoformat() if isinstance(issued_on, date) else issued_on,
+            convert=date.fromisoformat,
+        ),
+        total_ht=_read(Decimal, data.get("BT-109"), sign=sign),
+        total_ttc=_read(Decimal, data.get("BT-112"), sign=sign),
+        lines=lines,
+        adjustments=adjustments,
+    )
+
+
+def read_invoice(pdf: bytes) -> RawInvoice:
+    """Lit un PDF Factur-X. Lève `NotFacturX` si ce n'en est pas un."""
+    return read_xml(extract_xml(pdf))

@@ -264,3 +264,35 @@ nous-mêmes ne mesure rien d'autre que la tuyauterie.
 
 **Le tableau de bord entre dans le périmètre**, après la chaîne de lecture et
 alimenté par elle.
+
+## 11/11/2026 — Le lecteur de factures électroniques
+
+**Ce qu'il fait.** `facturx.read_invoice` ressort le XML d'un PDF Factur-X et
+le rend dans `RawInvoice`, le contrat que le banc note déjà. Aucun modèle de
+langage : les champs se lisent par leurs codes de norme.
+
+**Le contrat a dû grandir.** Écrit pour le papier, il ne savait accueillir ni
+la référence article, ni les remises et frais de pied de facture. La première
+est la clé d'unicité d'un produit fournisseur, et le seul lien entre deux
+libellés quand le fournisseur renomme. Les seconds expliquent pourquoi la somme
+des lignes n'est pas le total : sans eux, une facture sur huit serait partie en
+validation humaine pour un écart que le document justifie lui-même.
+
+**Rien n'est déduit, même ici.** Le total d'une ligne est celui que porte le
+XML, pas quantité × prix. Le recoupement arithmétique reste donc un vrai
+contrôle : il attraperait un fournisseur dont le logiciel écrit des XML
+incohérents.
+
+**Un avoir change de signe à la lecture.** La norme l'écrit en positif avec un
+code de type ; un historique de prix l'attend en négatif. La conversion se fait
+à un seul endroit, et un prix unitaire ne devient jamais négatif.
+
+**« Pas un Factur-X » n'est pas une panne.** Un PDF sans XML lève `NotFacturX`,
+distinct d'un XML refusé par le schéma : le premier est un document d'une autre
+nature, à envoyer vers la lecture papier, le second un document cassé.
+
+**Ce que vaut le 100 %.** Les 438 factures du jeu factice se relisent sans un
+champ faux. C'est le résultat attendu d'un générateur et d'un lecteur écrits
+l'un pour l'autre : il prouve que la chaîne et le barème tiennent, rien sur de
+vraies factures. Le banc a été vérifié dans l'autre sens : une extraction
+altérée à la main est bien signalée, prix faux et ligne manquante.
