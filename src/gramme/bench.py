@@ -2,7 +2,7 @@
 
 Deux usages, parce qu'ils n'arrivent pas au même moment. Pendant la collecte,
 seul l'état du corpus a du sens : il dit ce qu'il manque pour que mesurer
-veuille dire quelque chose. Une fois `extract.py` écrit, le banc note les
+veuille dire quelque chose. Une fois les documents lus, le banc note les
 extractions contre le jeu de vérité.
 
 Les extractions sont relues sur disque plutôt que recalculées : rejouer le banc
@@ -97,7 +97,7 @@ def corpus_status(invoices: list[TruthInvoice]) -> CorpusStatus:
 
 
 def load_extractions(directory: Path = EXTRACTIONS_DIR) -> dict[str, RawInvoice]:
-    """Relit les extractions produites par `extract.py`, indexées par document.
+    """Relit les extractions écrites par `make read`, indexées par document.
 
     Le nom du fichier n'est pas la clé : c'est `source_file` dans l'annotation
     qui fait foi. Un fichier mal nommé doit apparaître comme non noté, pas

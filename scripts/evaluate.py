@@ -78,7 +78,7 @@ def _print_bench(invoices, extractions_dir: Path) -> None:
     print(f"\nBANC D'ESSAI — {extractions_dir}\n")
 
     if not extractions:
-        print("  Aucune extraction : le banc s'activera quand extract.py en produira.")
+        print("  Aucune extraction : lancer `make read` pour lire les factures.")
         return
 
     corpus, not_extracted = run_bench(invoices, extractions)
