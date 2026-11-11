@@ -29,14 +29,11 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from gramme import facturx
-from gramme.simulation import Invoice, simulate, to_truth
+from gramme.simulation import CORPUS_MARKER, Invoice, simulate, to_truth
 from gramme.world import World, load_world
 
 TEMPLATE_DIR = Path("corpus")
 OUTPUT_DIR = Path("data/synthetic")
-# Sa présence prouve qu'un dossier a été créé par ce script : rien d'autre
-# n'est jamais vidé.
-MARKER = ".generated-by-gramme"
 WORKERS = 6
 CHROME_TIMEOUT = 30  # secondes ; une facture s'imprime en une seconde
 CHROME_ATTEMPTS = 3
@@ -119,12 +116,14 @@ def print_to_pdf(chrome: str, html: str, workdir: Path) -> bytes:
 
 def prepare_output(output: Path) -> None:
     """Vide le dossier du jeu précédent, et seulement celui-là."""
-    if output.exists() and any(output.iterdir()) and not (output / MARKER).exists():
+    # Seul un dossier portant le marqueur a été créé par ce script : rien
+    # d'autre n'est jamais vidé.
+    if output.exists() and any(output.iterdir()) and not (output / CORPUS_MARKER).exists():
         raise SystemExit(f"{output} n'a pas été créé par ce script : je ne le vide pas.")
     for name in ("raw", "truth", "resent"):
         shutil.rmtree(output / name, ignore_errors=True)
         (output / name).mkdir(parents=True)
-    (output / MARKER).touch()
+    (output / CORPUS_MARKER).touch()
 
 
 def main() -> int:
