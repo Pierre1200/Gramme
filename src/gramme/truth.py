@@ -107,10 +107,9 @@ class TruthLine(_WithUnreadable):
     unit_price_ht: Decimal | None = None
     line_total_ht: Decimal | None = None
 
-    # Unité telle qu'imprimée sur la ligne : "KG", "CT", "PCE", "L"...
-    # `invoice_line` n'a pas encore de colonne pour elle (cf. 001_schema.sql,
-    # « PIÈGES À TRAITER ENSUITE »), mais l'information est irréversiblement
-    # perdue si on ne l'annote pas maintenant.
+    # Unité telle qu'imprimée sur la ligne : "KG", "CT", "PCE", "L"... Sans
+    # elle, « 2 CT » et « 12,5 KG » sont indiscernables, et tout prix au
+    # gramme en dépend.
     raw_unit: str | None = None
 
     # Colisage, quand la ligne ne le dit pas explicitement : « 10X500G » dans le

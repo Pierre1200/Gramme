@@ -245,6 +245,7 @@ def read_xml(xml: bytes) -> RawInvoice:
             raw_unit=_read(str, entry.get("BT-130")),
             unit_price_ht=_read(Decimal, entry.get("BT-146")),
             line_total_ht=_read(Decimal, entry.get("BT-131"), sign=sign),
+            vat_rate=_read(Decimal, entry.get("BT-152")),
         )
         for number, entry in enumerate(data.get("BG-25") or [], start=1)
     ]
@@ -260,8 +261,10 @@ def read_xml(xml: bytes) -> RawInvoice:
     ]
 
     issued_on = data.get("BT-2")
+    seller = data.get("BG-4") or {}
     return RawInvoice(
-        supplier_name=_read(str, (data.get("BG-4") or {}).get("name")),
+        supplier_name=_read(str, seller.get("name")),
+        supplier_siren=seller.get("legal_identifier"),
         invoice_number=_read(str, data.get("BT-1")),
         invoice_date=_read(
             date,
