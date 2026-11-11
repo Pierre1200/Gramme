@@ -1,16 +1,19 @@
-"""Lecture du rapport en base.
+"""Accès à la base : écriture des factures lues, lecture du rapport.
 
-Uniquement des SELECT sur les vues `report_*` (db/migrations/002_rapport.sql).
-Aucun calcul ici : montants, ratios et écarts arrivent déjà calculés par
-Postgres (décision 2). Ce module ne fait que les transporter jusqu'à la page.
+Aucun calcul ici, dans un sens comme dans l'autre (décision 2). À l'écriture,
+seules les valeurs lues sur le document sont stockées ; à la lecture, montants,
+ratios et écarts arrivent déjà calculés par Postgres, via les vues `report_*`.
 """
 
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 
 import psycopg
 from psycopg.rows import class_row
+
+from gramme.models import RawInvoice
 
 
 class DatabaseUnreachable(RuntimeError):
@@ -131,3 +134,161 @@ def read_report(url: str) -> Report:
             flags = cur.execute(_FLAGS_SQL).fetchall()
 
     return Report(summary=summary, margins=margins, price_changes=price_changes, flags=flags)
+
+
+# ------------------------------------------------------------------ écriture
+
+
+class StoreOutcome(StrEnum):
+    """Ce qu'est devenue une facture présentée à la base."""
+
+    STORED = "stored"
+    ALREADY_STORED = "already_stored"  # même fichier, déjà reçu
+    DUPLICATE_NUMBER = "duplicate_number"  # même numéro chez ce fournisseur, autre fichier
+    TO_REVIEW = "to_review"  # un champ indispensable n'a pas été lu
+
+
+def missing_fields(invoice: RawInvoice) -> list[str]:
+    """Les champs sans lesquels une facture ne peut pas entrer en base.
+
+    Une valeur non lue n'est jamais remplacée par une valeur supposée : la
+    facture part en validation humaine, entière.
+    """
+    missing = [
+        name for name in ("supplier_name", "invoice_date") if getattr(invoice, name).value is None
+    ]
+    for number, line in enumerate(invoice.lines, start=1):
+        missing += [
+            f"ligne {number} : {name}"
+            for name in ("qty", "unit_price_ht")
+            if getattr(line, name).value is None
+        ]
+    missing += [f"pied : {a.label}" for a in invoice.adjustments if a.amount_ht.value is None]
+    return missing
+
+
+def _supplier_id(cur: psycopg.Cursor, invoice: RawInvoice) -> int:
+    """Le fournisseur, reconnu par son SIREN, à défaut par son nom exact."""
+    name = invoice.supplier_name.value
+    if invoice.supplier_siren:
+        row = cur.execute(
+            "SELECT id FROM supplier WHERE siren = %s", (invoice.supplier_siren,)
+        ).fetchone()
+    else:
+        row = cur.execute("SELECT id FROM supplier WHERE name = %s", (name,)).fetchone()
+    if row:
+        return row[0]
+    return cur.execute(
+        "INSERT INTO supplier (name, siren) VALUES (%s, %s) RETURNING id",
+        (name, invoice.supplier_siren),
+    ).fetchone()[0]
+
+
+def _product_id(cur: psycopg.Cursor, supplier_id: int, ref: str | None, label: str) -> int:
+    """Le produit fournisseur : par sa référence, à défaut par son libellé.
+
+    Créé en attente de rapprochement (`pending`), sans ingrédient : relier un
+    libellé à un ingrédient est le travail de la normalisation.
+    """
+    if ref is not None:
+        row = cur.execute(
+            "SELECT id FROM supplier_product WHERE supplier_id = %s AND supplier_ref = %s",
+            (supplier_id, ref),
+        ).fetchone()
+    else:
+        row = cur.execute(
+            "SELECT id FROM supplier_product"
+            " WHERE supplier_id = %s AND supplier_ref IS NULL AND raw_label = %s",
+            (supplier_id, label),
+        ).fetchone()
+    if row:
+        return row[0]
+    return cur.execute(
+        "INSERT INTO supplier_product (supplier_id, supplier_ref, raw_label)"
+        " VALUES (%s, %s, %s) RETURNING id",
+        (supplier_id, ref, label),
+    ).fetchone()[0]
+
+
+def store_invoice(
+    conn: psycopg.Connection,
+    invoice: RawInvoice,
+    *,
+    source_uri: str,
+    source_hash: str,
+    extracted_by: str,
+) -> StoreOutcome:
+    """Écrit une facture lue, tout ou rien, et dit ce qu'elle est devenue.
+
+    `source_hash` est l'empreinte SHA-256 du fichier (`intake.fingerprint`) :
+    elle reconnaît un fichier renvoyé. `extracted_by` nomme ce qui a lu le
+    document (« factur-x », ou le modèle pour une facture papier).
+
+    Aucun prix relevé (`price_point`) n'est créé : un prix au gramme exige le
+    contenu d'un colis, que seule la normalisation connaît.
+    """
+    if missing_fields(invoice):
+        return StoreOutcome.TO_REVIEW
+
+    with conn.transaction(), conn.cursor() as cur:
+        if cur.execute("SELECT 1 FROM invoice WHERE source_hash = %s", (source_hash,)).fetchone():
+            return StoreOutcome.ALREADY_STORED
+
+        supplier_id = _supplier_id(cur, invoice)
+        number = invoice.invoice_number.value
+        if (
+            number is not None
+            and cur.execute(
+                "SELECT 1 FROM invoice WHERE supplier_id = %s AND invoice_number = %s",
+                (supplier_id, number),
+            ).fetchone()
+        ):
+            return StoreOutcome.DUPLICATE_NUMBER
+
+        invoice_id = cur.execute(
+            """
+            INSERT INTO invoice (supplier_id, invoice_number, invoice_date, total_ht,
+                                 total_ttc, source_uri, source_hash, extracted_at,
+                                 extraction_model)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s)
+            RETURNING id
+            """,
+            (
+                supplier_id,
+                number,
+                invoice.invoice_date.value,
+                invoice.total_ht.value,
+                invoice.total_ttc.value,
+                source_uri,
+                source_hash,
+                extracted_by,
+            ),
+        ).fetchone()[0]
+
+        for position, line in enumerate(invoice.lines, start=1):
+            cur.execute(
+                """
+                INSERT INTO invoice_line (invoice_id, line_no, raw_label, supplier_product_id,
+                                          qty, unit_price_ht, line_total_ht, raw_unit, vat_rate)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    invoice_id,
+                    line.line_no or position,
+                    line.raw_label,
+                    _product_id(cur, supplier_id, line.supplier_ref, line.raw_label),
+                    line.qty.value,
+                    line.unit_price_ht.value,
+                    line.line_total_ht.value,
+                    line.raw_unit.value,
+                    line.vat_rate.value if line.vat_rate else None,
+                ),
+            )
+
+        for adjustment in invoice.adjustments:
+            cur.execute(
+                "INSERT INTO invoice_adjustment (invoice_id, label, amount_ht) VALUES (%s, %s, %s)",
+                (invoice_id, adjustment.label, adjustment.amount_ht.value),
+            )
+
+    return StoreOutcome.STORED
