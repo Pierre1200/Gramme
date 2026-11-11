@@ -214,3 +214,53 @@ part, car le confondre avec une mauvaise lecture ferait chuter le taux pour une
 raison étrangère au modèle. Les extractions sont relues dans
 `data/extractions/`, un fichier par document : rejouer le banc après un
 changement de barème ne rappelle pas le modèle.
+
+## 11/11/2026 — Facture électronique d'abord, et un établissement inventé
+
+**Le constat.** Deux mois et demi après les premières promesses, `data/raw/`
+est vide. Attendre les factures des établissements cobayes bloquait tout le
+reste de la chaîne.
+
+**Facture électronique d'abord.** Depuis le 1er septembre 2026, toute
+entreprise reçoit ses factures par une plateforme agréée, et les grands
+fournisseurs les émettent déjà au format de la norme EN 16931. Un Factur-X est
+un PDF qui porte ses propres données en XML : quantités, prix et totaux se
+lisent sans modèle, donc sans erreur de lecture. La difficulté se déplace vers
+le rapprochement des libellés, qui reste du texte libre. La lecture papier est
+reportée, pas abandonnée : les petits fournisseurs ont jusqu'au 1er septembre
+2027.
+
+**Un établissement simulé plutôt que des factures tirées au hasard.** Des
+factures aléatoires auraient donné un rapport sans histoire. Le jeu part d'un
+restaurant-traiteur-pâtissier complet : ses ventes déterminent ses commandes,
+qui déterminent ses factures. On sait donc d'avance ce que le rapport doit
+montrer, et la chaîne se vérifie de bout en bout. Trois activités, pour
+exercer trois formes du modèle : l'assiette, le lot traiteur, la pâtisserie
+aux sous-recettes en cascade.
+
+**Des prix relevés, pas inventés.** Les tarifs de Metro sont réservés aux
+clients connectés. Les prix viennent donc des cotations publiques du Réseau
+des Nouvelles des Marchés (FranceAgriMer) : marchés de gros de Rungis et de
+Toulouse, et indicateurs mensuels des prix livrés aux professionnels. 44
+produits sur 63 sont sourcés, 19 sont des estimations marquées comme telles.
+Le prix du fichier est celui de la dernière semaine ; le chemin qui y mène est
+un scénario écrit pour que le rapport ait quelque chose à dire.
+
+**Fictif par construction, pas par convention.** Un SIREN qui échoue au
+contrôle de Luhn ne peut désigner aucune entreprise réelle, et le chargeur
+refuse un SIREN valide. Une facture factice qui ressemblerait trop à une vraie
+serait un faux ; celle-ci ne peut viser personne.
+
+**Ce que la bibliothèque a imposé.** `factur-x` écrit le XML, le contrôle
+contre le schéma officiel et sait le relire. Elle n'émet pas le profil BASIC :
+tout le jeu est au profil EN 16931. Un avoir s'y écrit en montants positifs,
+avec un code de type ; le jeu de vérité le garde en négatif, et le lecteur
+devra faire la conversion. L'unité imprimée (« CT ») devient un code (« XCT ») :
+la vérité porte le code, puisque c'est lui qui est lu.
+
+**Ce que le jeu ne prouve pas.** Ni que Gramme lit de vraies factures, ni que
+quelqu'un paiera pour. Un score parfait sur des documents que nous avons écrits
+nous-mêmes ne mesure rien d'autre que la tuyauterie.
+
+**Le tableau de bord entre dans le périmètre**, après la chaîne de lecture et
+alimenté par elle.
