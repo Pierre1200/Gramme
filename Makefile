@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help up down db-reset test lint eval demo-db demo
+.PHONY: help up down db-reset test lint eval demo-db demo corpus
 
 help:      ## Liste les commandes disponibles
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sort | \
@@ -17,8 +17,12 @@ test:      ## Lance les tests
 # formateur aurait repliées, et le && arrêtait tout avant qu'il passe.
 lint:      ## Formate puis vérifie le code
 	uv run ruff format . && uv run ruff check --fix .
+# CORPUS=data/synthetic pour le jeu factice ; par défaut, les vraies factures.
+CORPUS ?= data
 eval:      ## Banc d'essai : extraction comparée au jeu de vérité
-	uv run python scripts/evaluate.py
+	uv run python scripts/evaluate.py --corpus $(CORPUS)
+corpus:    ## Fabrique le jeu de factures factices Factur-X (demande Chrome)
+	uv run python scripts/generate_corpus.py
 
 # ---------------------------------------------------------------------------
 #  Démo — base séparée, chiffres fictifs, calcul réel (CLAUDE.md, « Démo »)

@@ -1,0 +1,957 @@
+# =============================================================================
+#  L'établissement fictif du jeu d'essai
+# =============================================================================
+#
+# Tout ce fichier est inventé : l'établissement, ses fournisseurs, leurs prix.
+# Il est la source unique du jeu de factures factices (`make corpus`) : la
+# simulation en tire les ventes, les commandes, puis les factures.
+#
+# Les noms de champs sont en anglais (règle du dépôt) ; les valeurs — noms de
+# plats, libellés, identifiants d'ingrédients — restent en français, comme sur
+# une vraie carte et de vraies factures.
+#
+# Identifiants fictifs par construction :
+#   - les SIREN échouent volontairement au contrôle de Luhn, qu'un vrai SIREN
+#     passe toujours : ils ne peuvent désigner aucune entreprise existante ;
+#   - les téléphones sont pris dans les tranches que l'Arcep réserve à la
+#     fiction (05 36 49 .. ..) ;
+#   - les adresses électroniques utilisent le domaine réservé `.example`.
+
+[establishment]
+name    = "Maison Trébuchet"
+tagline = "Restaurant · Traiteur · Pâtisserie"
+legal   = "SARL Maison Trébuchet"
+street  = "3 impasse du Jeu-d'Essai"
+zip     = "31000"
+city    = "Toulouse"
+siren   = "900000011"
+phone   = "05 36 49 00 10"
+email   = "contact@maison-trebuchet.example"
+
+[simulation]
+seed   = 2026
+months = 12
+# Part des factures renvoyées une seconde fois, à l'identique : c'est ce que
+# l'empreinte SHA-256 doit reconnaître.
+duplicate_rate = 0.01
+# Fermetures annuelles (mois-jour, bornes incluses) : aucune vente, aucune
+# livraison.
+closures = [["08-03", "08-17"], ["12-24", "01-02"]]
+
+
+# =============================================================================
+#  Les trois activités
+# =============================================================================
+# weekdays : poids relatif de chaque jour, du lundi au dimanche (0 = fermé).
+# months   : poids relatif de chaque mois, de janvier à décembre.
+# lumpy    : true = vendu par lots entiers sur quelques jours (une commande
+#            traiteur), false = ventes étalées chaque jour ouvert.
+
+[activities.restaurant]
+name     = "Restaurant"
+weekdays = [0.0, 0.9, 0.9, 1.0, 1.2, 1.3, 0.0]
+months   = [0.9, 0.9, 1.0, 1.0, 1.05, 1.1, 1.0, 0.9, 1.05, 1.0, 1.0, 1.1]
+lumpy    = false
+
+[activities.traiteur_sale]
+name     = "Traiteur salé"
+weekdays = [0.3, 0.3, 0.5, 0.8, 1.5, 2.5, 1.5]
+months   = [0.6, 0.6, 0.8, 1.0, 1.4, 1.7, 1.2, 0.5, 1.3, 1.0, 0.9, 1.9]
+lumpy    = true
+
+[activities.traiteur_sucre]
+name     = "Pâtisserie et traiteur sucré"
+weekdays = [0.0, 0.8, 0.8, 0.9, 1.0, 1.4, 1.5]
+months   = [1.2, 0.9, 0.9, 1.0, 1.0, 0.95, 0.8, 0.7, 0.95, 1.0, 1.0, 1.5]
+lumpy    = false
+
+
+# =============================================================================
+#  Les ingrédients
+# =============================================================================
+# unit : unité de base du schéma — g, ml ou unit (la pièce).
+
+[ingredients]
+# Viandes
+entrecote        = { name = "Entrecôte de bœuf",            unit = "g" }
+epaule_agneau    = { name = "Épaule d'agneau",              unit = "g" }
+poulet_cuisse    = { name = "Poulet, cuisses déjointées",   unit = "g" }
+saute_veau       = { name = "Épaule de veau sans os",       unit = "g" }
+magret           = { name = "Magret de canard",             unit = "g" }
+gorge_porc       = { name = "Gorge de porc",                unit = "g" }
+foie_porc        = { name = "Foie de porc",                 unit = "g" }
+poitrine_fumee   = { name = "Poitrine de porc fumée",       unit = "g" }
+os_veau          = { name = "Os de veau",                   unit = "g" }
+# Marée
+bar              = { name = "Bar entier",                   unit = "g" }
+gambas           = { name = "Gambas entières",              unit = "g" }
+moules           = { name = "Moules de bouchot",            unit = "g" }
+# Fruits et légumes
+pomme_de_terre   = { name = "Pommes de terre",              unit = "g" }
+citron           = { name = "Citrons jaunes",               unit = "g" }
+echalote         = { name = "Échalotes",                    unit = "g" }
+poivron_rouge    = { name = "Poivrons rouges",              unit = "g" }
+tomate           = { name = "Tomates",                      unit = "g" }
+oignon           = { name = "Oignons",                      unit = "g" }
+carotte          = { name = "Carottes",                     unit = "g" }
+ail              = { name = "Ail",                          unit = "g" }
+poireau          = { name = "Poireaux",                     unit = "g" }
+champignon       = { name = "Champignons de Paris",         unit = "g" }
+mesclun          = { name = "Mesclun",                      unit = "g" }
+thym             = { name = "Thym frais, la botte",         unit = "unit" }
+# Crèmerie
+beurre           = { name = "Beurre doux 82 %",             unit = "g" }
+beurre_tourage   = { name = "Beurre de tourage 84 %",       unit = "g" }
+creme            = { name = "Crème liquide 35 %",           unit = "ml" }
+lait             = { name = "Lait entier",                  unit = "ml" }
+oeuf             = { name = "Œufs entiers",                 unit = "unit" }
+comte            = { name = "Comté 12 mois",                unit = "g" }
+# Épicerie
+farine_t55       = { name = "Farine T55",                   unit = "g" }
+farine_gruau     = { name = "Farine de gruau T45",          unit = "g" }
+sucre            = { name = "Sucre semoule",                unit = "g" }
+sucre_glace      = { name = "Sucre glace",                  unit = "g" }
+levure           = { name = "Levure fraîche",               unit = "g" }
+riz_bomba        = { name = "Riz bomba",                    unit = "g" }
+riz_long         = { name = "Riz long étuvé",               unit = "g" }
+safran           = { name = "Safran",                       unit = "g" }
+huile_olive      = { name = "Huile d'olive",                unit = "ml" }
+huile_friture    = { name = "Huile de friture",             unit = "ml" }
+huile_tournesol  = { name = "Huile de tournesol",           unit = "ml" }
+vinaigre         = { name = "Vinaigre de vin rouge",        unit = "ml" }
+moutarde         = { name = "Moutarde de Dijon",            unit = "g" }
+cornichon        = { name = "Cornichons",                   unit = "g" }
+poivre           = { name = "Poivre noir concassé",         unit = "g" }
+cafe             = { name = "Café 100 % arabica",           unit = "g" }
+blanc_oeuf       = { name = "Blancs d'œufs liquides",       unit = "g" }
+# Matières premières de pâtisserie
+chocolat         = { name = "Chocolat de couverture 64 %",  unit = "g" }
+baton_chocolat   = { name = "Bâtons boulangers",            unit = "unit" }
+poudre_amande    = { name = "Poudre d'amande",              unit = "g" }
+praline          = { name = "Praliné noisette 50 %",        unit = "g" }
+vanille          = { name = "Vanille Bourbon, gousses",     unit = "g" }
+fondant          = { name = "Fondant pâtissier",            unit = "g" }
+amande_effilee   = { name = "Amandes effilées",             unit = "g" }
+# Cave
+vin_blanc        = { name = "Vin blanc de cuisine",         unit = "ml" }
+vin_rouge        = { name = "Vin rouge de cuisine",         unit = "ml" }
+cognac           = { name = "Cognac de cuisine",            unit = "ml" }
+
+
+# =============================================================================
+#  Les trajectoires de prix
+# =============================================================================
+# trends  : [semaines avant la dernière facture, multiplicateur], interpolé
+#           entre deux points. C'est « l'histoire » que le rapport doit raconter :
+#           les hausses des dernières semaines tombent dans la fenêtre de
+#           42 jours de `price_drift`. Ce scénario est inventé : seul le prix
+#           d'arrivée est réel (voir `price`, plus bas).
+# seasons : douze multiplicateurs, de janvier à décembre.
+
+[trends]
+inflation   = [[-52, 1.00], [-1, 1.03]]
+viande      = [[-52, 1.00], [-1, 1.04]]
+beurre      = [[-52, 1.00], [-8, 1.00], [-1, 1.18]]
+creme       = [[-52, 1.00], [-7, 1.00], [-1, 1.11]]
+oeufs       = [[-52, 1.00], [-9, 1.00], [-1, 1.095]]
+gambas      = [[-52, 1.00], [-6, 1.02], [-1, 1.22]]
+huile_olive = [[-52, 1.00], [-30, 1.08], [-10, 1.08], [-1, 1.28]]
+riz         = [[-52, 1.00], [-12, 1.00], [-1, 1.08]]
+# Tarif révisé par paliers trimestriels : la hausse se lit sur l'année, pas
+# sur six semaines.
+cacao       = [[-52, 1.00], [-40, 1.00], [-39, 1.07], [-27, 1.07], [-26, 1.14], [-14, 1.14], [-13, 1.25], [-1, 1.25]]
+vanille     = [[-52, 1.00], [-1, 0.85]]
+
+[seasons]
+tomate         = [1.35, 1.35, 1.30, 1.20, 1.05, 0.90, 0.80, 0.80, 0.88, 1.00, 1.15, 1.30]
+poivron        = [1.30, 1.30, 1.25, 1.15, 1.00, 0.90, 0.82, 0.82, 0.88, 1.00, 1.15, 1.25]
+citron         = [0.90, 0.90, 0.95, 1.00, 1.05, 1.10, 1.15, 1.15, 1.10, 1.00, 0.95, 0.90]
+poireau        = [0.90, 0.90, 0.95, 1.05, 1.20, 1.30, 1.30, 1.20, 1.00, 0.92, 0.90, 0.90]
+pomme_de_terre = [1.00, 1.02, 1.05, 1.10, 1.15, 1.20, 1.10, 0.95, 0.90, 0.92, 0.95, 0.98]
+agneau         = [1.00, 1.00, 1.10, 1.18, 1.05, 1.00, 0.97, 0.97, 0.98, 1.00, 1.00, 1.05]
+bar            = [1.05, 1.05, 1.00, 0.98, 0.95, 0.95, 1.00, 1.05, 1.00, 0.98, 1.00, 1.12]
+moules         = [1.00, 1.10, 1.20, 1.25, 1.25, 1.15, 0.95, 0.90, 0.90, 0.92, 0.95, 1.00]
+
+
+# =============================================================================
+#  D'où viennent les prix
+# =============================================================================
+# Chaque produit nomme sa source (`src`). Les cotations RNM sont celles du
+# Réseau des Nouvelles des Marchés (FranceAgriMer), en euros hors taxes :
+# stade grossistes sur les marchés de gros, ou prix moyen livré au carton
+# complet pour les indicateurs mensuels. Reproduction autorisée sous réserve de
+# mentionner la source : FranceAgriMer / RNM.
+#
+# `estimate` signale un prix sans relevé public : un ordre de grandeur, à
+# corriger par quelqu'un qui connaît le tarif.
+
+[sources]
+rnm_viande         = "RNM, MIN de Rungis, découpes de viande, cours grossistes du 06/11/2026"
+rnm_volaille       = "RNM, MIN de Rungis, volaille, cours grossistes, semaine 45 de 2026"
+rnm_tripier        = "RNM, MIN de Rungis, produits tripiers, cours grossistes du 30/10/2026"
+rnm_charcuterie    = "RNM, indicateur national charcuterie-traiteur, octobre 2026"
+rnm_maree          = "RNM, MIN de Rungis, marée, note hebdomadaire semaine 44 de 2026"
+rnm_maree_congelee = "RNM, MIN de Rungis, marée congelée, cours grossistes du 05/11/2026"
+rnm_toulouse       = "RNM, MIN de Toulouse, fruits et légumes, cours grossistes du 06/11/2026"
+rnm_rungis_fl      = "RNM, MIN de Rungis, fruits et légumes, cours grossistes du 10/11/2026"
+rnm_cremerie       = "RNM, indicateur produits laitiers et œufs pour collectivités, octobre 2026"
+rnm_epicerie       = "RNM, indicateur national des produits d'épicerie, octobre 2026"
+metro_catalogue    = "Catalogues promotionnels Metro 2026, prix habituel, relevés sur promocatalogues.fr"
+estimate           = "Aucun relevé public trouvé : ordre de grandeur, à corriger"
+
+
+# =============================================================================
+#  Les fournisseurs et leurs catalogues
+# =============================================================================
+# delivery    : jours de livraison ; every = une livraison toutes les N semaines.
+# pricing     : "market" = cours du jour, le prix bouge à chaque facture ;
+#               "list"   = tarif, révisé le premier du mois.
+#
+# Un produit :
+#   ref        référence article du fournisseur (absente chez le primeur)
+#   label      libellé tel qu'imprimé sur la facture
+#   ingredient l'ingrédient qu'il fournit ; absent = hors recettes
+#   sold_by    unité de facturation imprimée (KG, PCE, CT, SAC, BID, SEAU...)
+#   contains   quantité d'unité de base dans UNE unité facturée
+#   price      prix HT d'une unité facturée À LA DATE DE FIN du jeu : c'est le
+#              prix réel relevé, appliqué tel quel la dernière semaine. Les
+#              trajectoires décrivent le chemin pour y arriver, elles ne le
+#              déplacent pas.
+#   src        source du prix (voir [sources])
+#   proxy      le produit coté quand il n'est pas exactement celui-ci
+#   vat        taux de TVA, en pourcentage
+#   weight     "variable" = pesé à la livraison, quantité à trois décimales
+#   trend, season   trajectoire de prix (voir plus haut)
+#   share      part des achats de l'ingrédient, quand deux fournisseurs le vendent
+#   relabel    le libellé change en cours d'année ; `label` est le plus récent
+#   per_week   pour un produit hors recettes : unités achetées par semaine
+#   deposit    consigne facturée à la livraison, déduite au retour
+
+[suppliers.boucherie]
+name     = "Viandes du Ségala"
+legal    = "SAS Viandes du Ségala"
+street   = "14 route des Abattoirs-Fictifs"
+zip      = "12200"
+city     = "Villefranche-de-Rouergue"
+siren    = "900000029"
+phone    = "05 36 49 00 21"
+email    = "commandes@viandes-du-segala.example"
+color    = "#B23B19"
+prefix   = "VS"
+delivery = ["tue", "fri"]
+every    = 1
+pricing  = "market"
+terms    = "Paiement à 30 jours fin de mois"
+# Part des factures suivies d'un avoir (colis manquant, pièce refusée).
+credit_note_rate = 0.04
+products = [
+  { ref = "B1012", label = "ENTRECOTE VACHE SEMI-PAREE S/V", ingredient = "entrecote",      sold_by = "KG", contains = 1000, price = 14.90, vat = 5.5, weight = "variable", trend = "viande", src = "rnm_viande" },
+  { ref = "B2040", label = "EPAULE AGNEAU UE S/V",           ingredient = "epaule_agneau",  sold_by = "KG", contains = 1000, price = 11.55, vat = 5.5, weight = "variable", season = "agneau", src = "rnm_viande" },
+  { ref = "B3105", label = "CUISSE POULET DEJOINTEE LABEL",  ingredient = "poulet_cuisse",  sold_by = "KG", contains = 1000, price = 7.10,  vat = 5.5, weight = "variable", src = "rnm_volaille" },
+  { ref = "B1230", label = "EPAULE VEAU S/OS SEMI-PAREE",    ingredient = "saute_veau",     sold_by = "KG", contains = 1000, price = 9.95,  vat = 5.5, weight = "variable", trend = "viande", src = "rnm_viande" },
+  { ref = "B3310", label = "MAGRET CANARD FRANCE STD S/V",   ingredient = "magret",         sold_by = "KG", contains = 1000, price = 14.50, vat = 5.5, weight = "variable", src = "rnm_volaille", relabel = { weeks_before_end = 22, was = "MAGRET CANARD FR" } },
+  { ref = "B4020", label = "GORGE PORC S/COUENNE",           ingredient = "gorge_porc",     sold_by = "KG", contains = 1000, price = 3.20,  vat = 5.5, weight = "variable", src = "estimate", proxy = "non cotée ; entre le hachage (2,22) et la poitrine N.1 (3,49) à Rungis" },
+  { ref = "B4055", label = "FOIE PORC FRANCE",               ingredient = "foie_porc",      sold_by = "KG", contains = 1000, price = 1.90,  vat = 5.5, weight = "variable", src = "rnm_tripier" },
+  { ref = "B4130", label = "POITRINE FUMEE N1 PIECE 2KG",    ingredient = "poitrine_fumee", sold_by = "KG", contains = 1000, price = 10.77, vat = 5.5, weight = "variable", src = "rnm_charcuterie" },
+  { ref = "B1900", label = "OS VEAU CONCASSES",              ingredient = "os_veau",        sold_by = "KG", contains = 1000, price = 1.50,  vat = 5.5, weight = "variable", src = "estimate" },
+]
+
+[suppliers.maree]
+name     = "Marée des Deux-Rives"
+legal    = "SARL Marée des Deux-Rives"
+street   = "Quai n° 7, marché de gros imaginaire"
+zip      = "31200"
+city     = "Toulouse"
+siren    = "900000037"
+phone    = "05 36 49 00 32"
+email    = "criee@maree-deux-rives.example"
+color    = "#1F6F8B"
+prefix   = "MDR"
+delivery = ["tue", "fri"]
+every    = 1
+pricing  = "market"
+terms    = "Paiement à réception"
+products = [
+  { ref = "M0412", label = "BAR SAUVAGE CHALUT 1/2KG",       ingredient = "bar",    sold_by = "KG",  contains = 1000, price = 19.00, vat = 5.5, weight = "variable", season = "bar", src = "rnm_maree" },
+  { ref = "M0733", label = "GAMBAS CONGELEE T4 IMPORT",      ingredient = "gambas", sold_by = "KG",  contains = 1000, price = 19.50, vat = 5.5, trend = "gambas", src = "rnm_maree_congelee" },
+  { ref = "M0150", label = "MOULES BOUCHOT FRANCE SAC 5KG",  ingredient = "moules", sold_by = "SAC", contains = 5000, price = 20.00, vat = 5.5, season = "moules", src = "rnm_maree" },
+]
+
+[suppliers.primeur]
+name     = "Les Jardins de Lalande-Fictive"
+legal    = "EURL Les Jardins de Lalande-Fictive"
+street   = "Carreau des producteurs, allée C"
+zip      = "31200"
+city     = "Toulouse"
+siren    = "900000045"
+phone    = "05 36 49 00 43"
+email    = "bonjour@jardins-lalande.example"
+color    = "#3E6B39"
+prefix   = "JL"
+delivery = ["tue", "fri"]
+every    = 1
+pricing  = "market"
+# Petite structure : aucune référence article sur ses factures. Un libellé qui
+# change n'a donc rien pour être rattaché à l'ancien.
+terms    = "Paiement à 15 jours"
+products = [
+  { label = "POMME DE TERRE AGATA LAVEE SAC 10KG",   ingredient = "pomme_de_terre", sold_by = "SAC",   contains = 10000, price = 7.50,  vat = 5.5, season = "pomme_de_terre", src = "rnm_toulouse" },
+  { label = "CITRON ESPAGNE CAT.1 58-67",            ingredient = "citron",         sold_by = "KG",    contains = 1000,  price = 1.75,  vat = 5.5, weight = "variable", season = "citron", src = "rnm_toulouse" },
+  { label = "ECHALOTE FRANCE CAT.1 FILET 5KG",       ingredient = "echalote",       sold_by = "COLIS", contains = 5000,  price = 8.00,  vat = 5.5, src = "rnm_toulouse" },
+  { label = "POIVRON ROUGE CARRE ESPAGNE",           ingredient = "poivron_rouge",  sold_by = "KG",    contains = 1000,  price = 3.80,  vat = 5.5, weight = "variable", season = "poivron", src = "rnm_rungis_fl" },
+  # L'origine bascule à l'automne : même produit, autre libellé, et aucune
+  # référence article pour faire le lien.
+  { label = "TOMATE RONDE MAROC 67-82 COLIS 6KG",    ingredient = "tomate",         sold_by = "COLIS", contains = 6000,  price = 12.00, vat = 5.5, season = "tomate", src = "rnm_toulouse", relabel = { weeks_before_end = 4, was = "TOMATE RONDE FRANCE 67-82 COLIS 6KG" } },
+  { label = "OIGNON JAUNE FRANCE 60-80 SAC 10KG",    ingredient = "oignon",         sold_by = "SAC",   contains = 10000, price = 7.00,  vat = 5.5, src = "rnm_toulouse" },
+  { label = "CAROTTE FRANCE CAT.1 SAC 10KG",         ingredient = "carotte",        sold_by = "SAC",   contains = 10000, price = 9.50,  vat = 5.5, src = "rnm_toulouse" },
+  { label = "AIL VIOLET SEC FRANCE 60-80",           ingredient = "ail",            sold_by = "KG",    contains = 1000,  price = 6.50,  vat = 5.5, weight = "variable", src = "rnm_toulouse" },
+  { label = "POIREAU FRANCE CAT.1",                  ingredient = "poireau",        sold_by = "KG",    contains = 1000,  price = 1.90,  vat = 5.5, weight = "variable", season = "poireau", src = "rnm_toulouse" },
+  { label = "CHAMPIGNON PARIS FR PIED ENTIER 3KG",   ingredient = "champignon",     sold_by = "COLIS", contains = 3000,  price = 11.40, vat = 5.5, src = "rnm_rungis_fl" },
+  { label = "MELANGE SALADES FRANCE",                ingredient = "mesclun",        sold_by = "KG",    contains = 1000,  price = 7.00,  vat = 5.5, weight = "variable", src = "rnm_rungis_fl" },
+  { label = "THYM FRANCE BOTTE",                     ingredient = "thym",           sold_by = "PCE",   contains = 1,     price = 0.60,  vat = 5.5, src = "rnm_rungis_fl" },
+]
+
+[suppliers.cremerie]
+name     = "Laiterie du Lauragais-Imaginaire"
+legal    = "SCA Laiterie du Lauragais-Imaginaire"
+street   = "2 chemin de la Baratte"
+zip      = "31290"
+city     = "Villefranche-de-Lauragais"
+siren    = "900000052"
+phone    = "05 36 49 00 54"
+email    = "commandes@laiterie-lauragais.example"
+color    = "#95570D"
+prefix   = "LL"
+delivery = ["thu"]
+every    = 1
+pricing  = "list"
+terms    = "Paiement à 30 jours"
+products = [
+  { ref = "L-BEU-01", label = "BEURRE DOUX 82% ROULEAU 1KG",        ingredient = "beurre",         sold_by = "PCE", contains = 1000, price = 9.79,  vat = 5.5, trend = "beurre", share = 0.2, src = "metro_catalogue" },
+  { ref = "L-BEU-07", label = "BEURRE PATISSIER CHARENTES AOP 1KG", ingredient = "beurre_tourage", sold_by = "PCE", contains = 1000, price = 11.65, vat = 5.5, trend = "beurre", src = "metro_catalogue", proxy = "conditionnement non précisé sur le relevé, supposé au kilo" },
+  { ref = "L-CRE-03", label = "CREME LIQUIDE UHT 35% 1L",           ingredient = "creme",          sold_by = "PCE", contains = 1000, price = 7.11,  vat = 5.5, trend = "creme", share = 0.3, src = "rnm_cremerie", proxy = "crème UHT nature 30 % MG, 1 L" },
+  { ref = "L-LAI-02", label = "LAIT ENTIER UHT 6X1L",               ingredient = "lait",           sold_by = "CT",  contains = 6000, price = 8.64,  vat = 5.5, src = "rnm_cremerie", proxy = "lait UHT demi-écrémé France 1 L, 1,44 € le litre" },
+  { ref = "L-OEU-18", label = "OEUFS PLEIN AIR M X180",             ingredient = "oeuf",           sold_by = "CT",  contains = 180,  price = 84.83, vat = 5.5, trend = "oeufs", src = "rnm_cremerie" },
+  { ref = "L-FRO-11", label = "COMTE AOP +4 MOIS 1/8 MEULE",        ingredient = "comte",          sold_by = "KG",  contains = 1000, price = 24.56, vat = 5.5, weight = "variable", src = "rnm_cremerie" },
+]
+
+[suppliers.grossiste]
+name     = "Sud-Ouest Gastro Distribution (fictif)"
+legal    = "SAS Sud-Ouest Gastro Distribution"
+street   = "Zone logistique des Exemples, bât. D"
+zip      = "31150"
+city     = "Fenouillet"
+siren    = "900000060"
+phone    = "05 36 49 00 65"
+email    = "adv@sogd.example"
+color    = "#3A3F8F"
+prefix   = "SOGD"
+delivery = ["wed"]
+every    = 1
+pricing  = "list"
+terms    = "Paiement à 30 jours fin de mois"
+# Remise contractuelle appliquée en pied de facture, après le total des lignes.
+footer_discount = 2.0
+products = [
+  { ref = "104512", label = "FARINE T55 SAC 25KG",             ingredient = "farine_t55",      sold_by = "SAC",  contains = 25000, price = 23.75,  vat = 5.5, trend = "inflation", src = "estimate", proxy = "le RNM cote la T55 en sac de 1 kg à 1,18 € le kilo" },
+  { ref = "104530", label = "FARINE GRUAU T45 25KG",           ingredient = "farine_gruau",    sold_by = "SAC",  contains = 25000, price = 27.50,  vat = 5.5, trend = "inflation", src = "estimate" },
+  { ref = "107210", label = "SUCRE SEMOULE PATISSIERE 25KG",   ingredient = "sucre",           sold_by = "SAC",  contains = 25000, price = 36.99,  vat = 5.5, src = "metro_catalogue" },
+  { ref = "107244", label = "SUCRE GLACE AMYLACE 5KG",         ingredient = "sucre_glace",     sold_by = "SAC",  contains = 5000,  price = 9.50,   vat = 5.5, src = "estimate" },
+  { ref = "112006", label = "LEVURE FRAICHE 500G",             ingredient = "levure",          sold_by = "PCE",  contains = 500,   price = 2.50,   vat = 5.5, src = "estimate" },
+  { ref = "121380", label = "RIZ BOMBA 5KG",                   ingredient = "riz_bomba",       sold_by = "SAC",  contains = 5000,  price = 24.50,  vat = 5.5, trend = "riz", src = "estimate" },
+  { ref = "121355", label = "RIZ LONG INDICA ETUVE 5KG",       ingredient = "riz_long",        sold_by = "SAC",  contains = 5000,  price = 13.70,  vat = 5.5, trend = "riz", src = "rnm_epicerie" },
+  { ref = "133901", label = "SAFRAN PISTILS BTE 5G",           ingredient = "safran",          sold_by = "BTE",  contains = 5,     price = 60.00,  vat = 5.5, src = "estimate" },
+  { ref = "140118", label = "HUILE OLIVE VIERGE EXTRA BID 5L", ingredient = "huile_olive",     sold_by = "BID",  contains = 5000,  price = 65.22,  vat = 5.5, trend = "huile_olive", src = "rnm_epicerie" },
+  { ref = "140162", label = "HUILE FRITURE BID 10L",           ingredient = "huile_friture",   sold_by = "BID",  contains = 10000, price = 40.84,  vat = 5.5, src = "rnm_epicerie", proxy = "huile de tournesol, bidon 5 L à 20,42 €" },
+  { ref = "140140", label = "HUILE TOURNESOL BID 5L",          ingredient = "huile_tournesol", sold_by = "BID",  contains = 5000,  price = 20.42,  vat = 5.5, src = "rnm_epicerie" },
+  { ref = "141007", label = "VINAIGRE VIN ROUGE 6° 1,5L",      ingredient = "vinaigre",        sold_by = "PCE",  contains = 1500,  price = 1.82,   vat = 5.5, src = "rnm_epicerie" },
+  { ref = "142233", label = "MOUTARDE DIJON SEAU 5KG",         ingredient = "moutarde",        sold_by = "SEAU", contains = 5000,  price = 18.95,  vat = 5.5, src = "rnm_epicerie" },
+  # contains : poids net égoutté supposé d'une boîte 5/1.
+  { ref = "142418", label = "CORNICHONS 80-119 BTE 5/1",       ingredient = "cornichon",       sold_by = "BTE",  contains = 2400,  price = 13.07,  vat = 5.5, src = "rnm_epicerie" },
+  { ref = "133050", label = "POIVRE GRIS MOULU 1KG",           ingredient = "poivre",          sold_by = "PCE",  contains = 1000,  price = 23.52,  vat = 5.5, src = "rnm_epicerie" },
+  # Colisages cachés dans le libellé : l'unité facturée est le carton.
+  { ref = "150720", label = "CAFE 100% ARABICA 6X1KG",         ingredient = "cafe",            sold_by = "CT",   contains = 6000,  price = 164.10, vat = 5.5, src = "rnm_epicerie", proxy = "café moulu 100 % arabica, sac 1 kg à 27,35 €" },
+  { ref = "160090", label = "BEURRE DOUX 82% 10X1KG",          ingredient = "beurre",          sold_by = "CT",   contains = 10000, price = 77.20,  vat = 5.5, trend = "beurre", share = 0.8, src = "metro_catalogue", proxy = "conditionnement non précisé sur le relevé, supposé carton de 10 kg" },
+  { ref = "160214", label = "CREME LIQUIDE UHT 6X1L",          ingredient = "creme",           sold_by = "CT",   contains = 6000,  price = 18.18,  vat = 5.5, trend = "creme", share = 0.7, src = "metro_catalogue", proxy = "taux de matière grasse non précisé sur le relevé" },
+  { ref = "160377", label = "BLANC OEUF LIQ. PAST. 1KG",       ingredient = "blanc_oeuf",      sold_by = "PCE",  contains = 1000,  price = 6.90,   vat = 5.5, trend = "oeufs", src = "estimate", proxy = "le RNM cote l'œuf liquide entier à 8,86 € le kilo" },
+  # Hors recettes, TVA à 20 % : ces lignes ne doivent rattacher aucun ingrédient.
+  { ref = "310045", label = "FILM ETIRABLE 45CM X 300M",       sold_by = "PCE", contains = 1, price = 9.80,  vat = 20.0, per_week = 0.5,  src = "estimate" },
+  { ref = "310112", label = "PAPIER CUISSON 40X60 X500",       sold_by = "CT",  contains = 1, price = 28.00, vat = 20.0, per_week = 0.25, src = "estimate" },
+  { ref = "320508", label = "BOITE PATISSIERE 20X20 X50",      sold_by = "CT",  contains = 1, price = 19.50, vat = 20.0, per_week = 1.0,  src = "estimate" },
+]
+
+[suppliers.patisserie]
+name     = "Le Comptoir du Pâtissier Fictif"
+legal    = "SAS Le Comptoir du Pâtissier Fictif"
+street   = "9 avenue de la Couverture"
+zip      = "81000"
+city     = "Albi"
+siren    = "900000078"
+phone    = "05 36 49 00 76"
+email    = "pro@comptoir-patissier.example"
+color    = "#6B3E5E"
+prefix   = "CPF"
+delivery = ["wed"]
+every    = 2
+pricing  = "list"
+terms    = "Paiement à 30 jours"
+# Port facturé sous le franco, à 20 % de TVA.
+shipping = { label = "FRAIS DE PORT", fee = 18.00, free_above = 250.00, vat = 20.0 }
+products = [
+  { ref = "CP-2064", label = "COUVERTURE NOIRE PISTOLES 5KG",    ingredient = "chocolat",       sold_by = "SAC",  contains = 5000, price = 84.90, vat = 5.5, trend = "cacao", src = "metro_catalogue", proxy = "couverture noire à 16,98 € ; conditionnement non précisé, supposé au kilo" },
+  { ref = "CP-2310", label = "BATONS BOULANGERS 44% X300",       ingredient = "baton_chocolat", sold_by = "BTE",  contains = 300,  price = 17.50, vat = 5.5, trend = "cacao", src = "estimate" },
+  { ref = "CP-4105", label = "POUDRE AMANDE BLANCHE 1KG",        ingredient = "poudre_amande",  sold_by = "PCE",  contains = 1000, price = 17.33, vat = 5.5, src = "rnm_epicerie" },
+  { ref = "CP-4250", label = "PRALINE NOISETTE 50% SEAU 5KG",    ingredient = "praline",        sold_by = "SEAU", contains = 5000, price = 82.00, vat = 5.5, src = "estimate" },
+  { ref = "CP-6012", label = "VANILLE BOURBON GOUSSES 250G",     ingredient = "vanille",        sold_by = "PCE",  contains = 250,  price = 95.00, vat = 5.5, trend = "vanille", src = "estimate" },
+  { ref = "CP-5120", label = "FONDANT PATISSIER BLANC SEAU 7KG", ingredient = "fondant",        sold_by = "SEAU", contains = 7000, price = 19.60, vat = 5.5, src = "estimate" },
+  { ref = "CP-4130", label = "AMANDES EFFILEES 1KG",             ingredient = "amande_effilee", sold_by = "PCE",  contains = 1000, price = 13.50, vat = 5.5, src = "estimate" },
+]
+
+[suppliers.cave]
+name     = "Caves du Canal-Inventé"
+legal    = "SARL Caves du Canal-Inventé"
+street   = "27 quai des Barriques"
+zip      = "31400"
+city     = "Toulouse"
+siren    = "900000086"
+phone    = "05 36 49 00 87"
+email    = "pro@caves-canal.example"
+color    = "#7A1F2B"
+prefix   = "CCI"
+delivery = ["thu"]
+every    = 2
+pricing  = "list"
+terms    = "Paiement à 30 jours"
+products = [
+  { ref = "V-BIB-10B", label = "VIN BLANC UE BIB 10L",      ingredient = "vin_blanc", sold_by = "BIB", contains = 10000, price = 24.07, vat = 20.0, src = "rnm_epicerie" },
+  { ref = "V-BIB-10R", label = "VIN ROUGE UE BIB 10L",      ingredient = "vin_rouge", sold_by = "BIB", contains = 10000, price = 22.44, vat = 20.0, src = "rnm_epicerie" },
+  { ref = "S-COG-01",  label = "COGNAC CUISINE 40% 1L",     ingredient = "cognac",    sold_by = "PCE", contains = 1000,  price = 16.50, vat = 20.0, src = "estimate" },
+  # Boisson vendue en salle, hors recettes. Casier consigné : facturé à la
+  # livraison, déduit au retour.
+  { ref = "E-MIN-12",  label = "EAU MINERALE VERRE 12X1L",  sold_by = "CS",  contains = 1, price = 7.80, vat = 5.5, per_week = 6.0, src = "estimate", deposit = { label = "CONSIGNE CASIER 12 BOUT.", amount = 4.20 } },
+]
+
+
+# =============================================================================
+#  Les recettes
+# =============================================================================
+# Une sous-recette EST une recette : sans `activity`, elle n'est pas vendue.
+#
+#   batch     ce que produit la recette (quantité, unité) — yield_qty, yield_unit
+#   portions  nombre de portions vendues dans ce batch
+#   price_ttc prix de vente d'UNE portion
+#   vat       10 = consommé sur place ou livré prêt à servir ; 5.5 = vitrine
+#   per_week  portions vendues par semaine moyenne
+#
+# Un composant : `ingredient` OU `recipe`, une quantité NETTE et son unité.
+# `yield` est le rendement (parage, épluchage) : le coût se calcule sur le brut,
+# qty / yield. L'eau n'est pas comptée.
+#
+# Limite connue (CLAUDE.md, coproduits) : jaunes et blancs sont comptés chacun
+# sur un œuf entier, comme le jus du citron sur le citron entier.
+
+# ----------------------------------------------------------------- sous-recettes
+
+[recipes.beurre_blanc]
+name  = "Beurre blanc"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { ingredient = "beurre",    qty = 700, unit = "g" },
+  { ingredient = "echalote",  qty = 120, unit = "g",  yield = 0.90, note = "épluchées" },
+  { ingredient = "vin_blanc", qty = 250, unit = "ml" },
+  { ingredient = "creme",     qty = 100, unit = "ml" },
+]
+
+[recipes.vinaigrette]
+name  = "Vinaigrette maison"
+batch = { qty = 1000, unit = "ml" }
+components = [
+  { ingredient = "huile_tournesol", qty = 500, unit = "ml" },
+  { ingredient = "huile_olive",     qty = 200, unit = "ml" },
+  { ingredient = "vinaigre",        qty = 200, unit = "ml" },
+  { ingredient = "moutarde",        qty = 80,  unit = "g" },
+  { ingredient = "echalote",        qty = 30,  unit = "g", yield = 0.90 },
+]
+
+[recipes.fond_brun]
+name  = "Fond brun de veau"
+batch = { qty = 2000, unit = "ml" }
+components = [
+  { ingredient = "os_veau",       qty = 3000, unit = "g" },
+  { ingredient = "carotte",       qty = 300,  unit = "g", yield = 0.85 },
+  { ingredient = "oignon",        qty = 300,  unit = "g", yield = 0.90 },
+  { ingredient = "vin_rouge",     qty = 500,  unit = "ml" },
+  { ingredient = "thym",          qty = 1,    unit = "unit" },
+]
+
+[recipes.gratin_dauphinois]
+name  = "Gratin dauphinois"
+batch = { qty = 20, unit = "unit" }
+components = [
+  { ingredient = "pomme_de_terre", qty = 3000, unit = "g", yield = 0.85, note = "épluchées" },
+  { ingredient = "creme",          qty = 1200, unit = "ml" },
+  { ingredient = "lait",           qty = 800,  unit = "ml" },
+  { ingredient = "ail",            qty = 20,   unit = "g" },
+  { ingredient = "beurre",         qty = 50,   unit = "g" },
+]
+
+[recipes.blanquette_base]
+name  = "Blanquette de veau (base)"
+batch = { qty = 30, unit = "unit" }
+components = [
+  { ingredient = "saute_veau",    qty = 5400, unit = "g",  yield = 0.88, note = "180 g cru par portion, épaule semi-parée" },
+  { ingredient = "carotte",       qty = 1500, unit = "g",  yield = 0.85 },
+  { ingredient = "oignon",        qty = 600,  unit = "g",  yield = 0.90 },
+  { ingredient = "champignon",    qty = 1500, unit = "g",  yield = 0.90 },
+  { ingredient = "creme",         qty = 1500, unit = "ml" },
+  { ingredient = "beurre",        qty = 300,  unit = "g",  note = "roux" },
+  { ingredient = "farine_t55",    qty = 300,  unit = "g",  note = "roux" },
+  { ingredient = "oeuf",          qty = 6,    unit = "unit", note = "jaunes, liaison" },
+  { ingredient = "vin_blanc",     qty = 500,  unit = "ml" },
+  { ingredient = "thym",          qty = 3,    unit = "unit" },
+  { ingredient = "citron",        qty = 100,  unit = "g",  yield = 0.35, note = "jus" },
+]
+
+[recipes.terrine_campagne]
+name  = "Terrine de campagne"
+batch = { qty = 20, unit = "unit" }
+components = [
+  { ingredient = "gorge_porc",     qty = 900, unit = "g", yield = 0.95 },
+  { ingredient = "foie_porc",      qty = 300, unit = "g" },
+  { ingredient = "poitrine_fumee", qty = 150, unit = "g" },
+  { ingredient = "oignon",         qty = 100, unit = "g", yield = 0.90 },
+  { ingredient = "oeuf",           qty = 2,   unit = "unit" },
+  { ingredient = "creme",          qty = 100, unit = "ml" },
+  { ingredient = "cognac",         qty = 30,  unit = "ml" },
+  { ingredient = "ail",            qty = 10,  unit = "g" },
+]
+
+[recipes.pate_sucree]
+name  = "Pâte sucrée"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { ingredient = "farine_t55", qty = 500, unit = "g" },
+  { ingredient = "beurre",     qty = 250, unit = "g" },
+  { ingredient = "sucre",      qty = 200, unit = "g" },
+  { ingredient = "oeuf",       qty = 2,   unit = "unit" },
+]
+
+[recipes.creme_citron]
+name  = "Crème au citron"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { ingredient = "citron", qty = 300, unit = "g", yield = 0.35, note = "jus" },
+  { ingredient = "sucre",  qty = 250, unit = "g" },
+  { ingredient = "oeuf",   qty = 5,   unit = "unit" },
+  { ingredient = "beurre", qty = 150, unit = "g" },
+]
+
+[recipes.meringue_italienne]
+name  = "Meringue italienne"
+batch = { qty = 500, unit = "g" }
+components = [
+  { ingredient = "sucre", qty = 350, unit = "g" },
+  { ingredient = "oeuf",  qty = 4,   unit = "unit", note = "blancs" },
+]
+
+[recipes.tarte_citron]
+name  = "Tarte citron meringuée (entière, 6 parts)"
+batch = { qty = 6, unit = "unit" }
+components = [
+  { recipe = "pate_sucree",        qty = 400, unit = "g" },
+  { recipe = "creme_citron",       qty = 700, unit = "g" },
+  { recipe = "meringue_italienne", qty = 250, unit = "g" },
+]
+
+[recipes.creme_anglaise]
+name  = "Crème anglaise"
+batch = { qty = 1000, unit = "ml" }
+components = [
+  { ingredient = "lait",    qty = 500, unit = "ml" },
+  { ingredient = "creme",   qty = 500, unit = "ml" },
+  { ingredient = "oeuf",    qty = 8,   unit = "unit", note = "jaunes" },
+  { ingredient = "sucre",   qty = 150, unit = "g" },
+  { ingredient = "vanille", qty = 4,   unit = "g", note = "une gousse" },
+]
+
+[recipes.pate_a_choux]
+name  = "Pâte à choux"
+batch = { qty = 1350, unit = "g" }
+components = [
+  { ingredient = "lait",       qty = 250, unit = "ml" },
+  { ingredient = "beurre",     qty = 220, unit = "g" },
+  { ingredient = "farine_t55", qty = 300, unit = "g" },
+  { ingredient = "oeuf",       qty = 9,   unit = "unit" },
+  { ingredient = "sucre",      qty = 10,  unit = "g" },
+]
+
+[recipes.pate_brisee]
+name  = "Pâte brisée"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { ingredient = "farine_t55", qty = 550, unit = "g" },
+  { ingredient = "beurre",     qty = 280, unit = "g" },
+  { ingredient = "oeuf",       qty = 2,   unit = "unit" },
+]
+
+[recipes.pate_croissant]
+name  = "Pâte à croissant"
+batch = { qty = 2300, unit = "g" }
+components = [
+  { ingredient = "farine_gruau",   qty = 1000, unit = "g" },
+  { ingredient = "beurre",         qty = 100,  unit = "g", note = "détrempe" },
+  { ingredient = "beurre_tourage", qty = 500,  unit = "g", note = "tourage" },
+  { ingredient = "sucre",          qty = 120,  unit = "g" },
+  { ingredient = "levure",         qty = 40,   unit = "g" },
+  { ingredient = "lait",           qty = 500,  unit = "ml" },
+]
+
+[recipes.creme_patissiere]
+name  = "Crème pâtissière"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { ingredient = "lait",       qty = 750, unit = "ml" },
+  { ingredient = "sucre",      qty = 150, unit = "g" },
+  { ingredient = "oeuf",       qty = 8,   unit = "unit", note = "jaunes" },
+  { ingredient = "farine_t55", qty = 70,  unit = "g" },
+  { ingredient = "beurre",     qty = 50,  unit = "g" },
+  { ingredient = "vanille",    qty = 4,   unit = "g", note = "une gousse" },
+]
+
+[recipes.creme_mousseline_pralinee]
+name  = "Crème mousseline pralinée"
+batch = { qty = 1000, unit = "g" }
+components = [
+  { recipe = "creme_patissiere", qty = 550, unit = "g" },
+  { ingredient = "beurre",       qty = 250, unit = "g" },
+  { ingredient = "praline",      qty = 200, unit = "g" },
+]
+
+# -------------------------------------------------------------------- restaurant
+
+[recipes.terrine_pickles]
+name      = "Terrine de campagne, pickles"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 9.00
+vat       = 10.0
+per_week  = 70
+components = [
+  { recipe = "terrine_campagne", qty = 1,  unit = "unit", note = "une tranche" },
+  { ingredient = "cornichon",    qty = 25, unit = "g" },
+  { ingredient = "mesclun",      qty = 20, unit = "g" },
+  { recipe = "vinaigrette",      qty = 10, unit = "ml" },
+]
+
+[recipes.poireaux_vinaigrette]
+name      = "Poireaux vinaigrette, œuf mimosa"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 8.00
+vat       = 10.0
+per_week  = 60
+components = [
+  { ingredient = "poireau", qty = 180, unit = "g", yield = 0.55, note = "blancs seuls" },
+  { ingredient = "oeuf",    qty = 1,   unit = "unit" },
+  { recipe = "vinaigrette", qty = 30,  unit = "ml" },
+]
+
+[recipes.bar_beurre_blanc]
+name      = "Filet de bar, beurre blanc"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 26.00
+vat       = 10.0
+per_week  = 45
+components = [
+  { ingredient = "bar",            qty = 140, unit = "g", yield = 0.40, note = "filets levés sur bar entier" },
+  { recipe = "beurre_blanc",       qty = 60,  unit = "g" },
+  { ingredient = "pomme_de_terre", qty = 150, unit = "g", yield = 0.85, note = "épluchées" },
+]
+
+[recipes.entrecote_frites]
+name      = "Entrecôte 300 g, frites"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 29.00
+vat       = 10.0
+per_week  = 70
+components = [
+  { ingredient = "entrecote",      qty = 300, unit = "g",  yield = 0.88, note = "parage de la pièce" },
+  { ingredient = "pomme_de_terre", qty = 250, unit = "g",  yield = 0.80, note = "épluchées et taillées" },
+  { ingredient = "huile_friture",  qty = 30,  unit = "ml", note = "absorption à la friture" },
+]
+
+[recipes.agneau_confit]
+name      = "Épaule d'agneau confite 7 h"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 26.00
+vat       = 10.0
+per_week  = 45
+components = [
+  { ingredient = "epaule_agneau", qty = 450, unit = "g", yield = 0.75, note = "désossée" },
+  { ingredient = "huile_olive",   qty = 20,  unit = "ml" },
+  { ingredient = "carotte",       qty = 80,  unit = "g", yield = 0.85 },
+  { ingredient = "ail",           qty = 10,  unit = "g" },
+]
+
+[recipes.blanquette_restaurant]
+name      = "Blanquette de veau à l'ancienne, riz pilaf"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 22.00
+vat       = 10.0
+per_week  = 60
+components = [
+  { recipe = "blanquette_base", qty = 1,  unit = "unit" },
+  { ingredient = "riz_long",    qty = 70, unit = "g" },
+  { ingredient = "beurre",      qty = 10, unit = "g" },
+  { ingredient = "oignon",      qty = 15, unit = "g", yield = 0.90 },
+]
+
+[recipes.magret_poivre]
+name      = "Magret de canard, sauce au poivre, gratin dauphinois"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 25.00
+vat       = 10.0
+per_week  = 80
+components = [
+  { ingredient = "magret",       qty = 200, unit = "g", yield = 0.90, note = "demi-magret paré" },
+  { recipe = "fond_brun",        qty = 80,  unit = "ml" },
+  { ingredient = "creme",        qty = 30,  unit = "ml" },
+  { ingredient = "cognac",       qty = 10,  unit = "ml" },
+  { ingredient = "poivre",       qty = 3,   unit = "g" },
+  { recipe = "gratin_dauphinois", qty = 1,  unit = "unit" },
+]
+
+[recipes.tarte_citron_assiette]
+name      = "Tarte citron meringuée, à l'assiette"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 9.00
+vat       = 10.0
+per_week  = 60
+components = [
+  { recipe = "tarte_citron", qty = 1, unit = "unit", note = "une part" },
+]
+
+[recipes.creme_brulee]
+name      = "Crème brûlée à la vanille"
+activity  = "restaurant"
+batch     = { qty = 10, unit = "unit" }
+portions  = 10
+price_ttc = 8.00
+vat       = 10.0
+per_week  = 65
+components = [
+  { ingredient = "creme",   qty = 1200, unit = "ml" },
+  { ingredient = "lait",    qty = 400,  unit = "ml" },
+  { ingredient = "oeuf",    qty = 12,   unit = "unit", note = "jaunes" },
+  { ingredient = "sucre",   qty = 250,  unit = "g" },
+  { ingredient = "vanille", qty = 8,    unit = "g", note = "deux gousses" },
+]
+
+[recipes.moelleux_chocolat]
+name      = "Moelleux au chocolat, crème anglaise"
+activity  = "restaurant"
+batch     = { qty = 12, unit = "unit" }
+portions  = 12
+price_ttc = 9.00
+vat       = 10.0
+per_week  = 55
+components = [
+  { ingredient = "chocolat",   qty = 300, unit = "g" },
+  { ingredient = "beurre",     qty = 250, unit = "g" },
+  { ingredient = "oeuf",       qty = 6,   unit = "unit" },
+  { ingredient = "sucre",      qty = 180, unit = "g" },
+  { ingredient = "farine_t55", qty = 90,  unit = "g" },
+  { recipe = "creme_anglaise", qty = 720, unit = "ml", note = "60 ml par assiette" },
+]
+
+[recipes.cafe]
+name      = "Café expresso"
+activity  = "restaurant"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 2.20
+vat       = 10.0
+per_week  = 200
+components = [
+  { ingredient = "cafe",  qty = 8, unit = "g" },
+  { ingredient = "sucre", qty = 5, unit = "g" },
+]
+
+# ----------------------------------------------------------------- traiteur salé
+
+[recipes.paella]
+name      = "Paella mixte, la part"
+activity  = "traiteur_sale"
+batch     = { qty = 25000, unit = "g" }
+portions  = 50
+price_ttc = 12.00
+vat       = 10.0
+per_week  = 150
+components = [
+  { ingredient = "gambas",        qty = 2250, unit = "g", yield = 0.50, note = "décortiquées" },
+  { ingredient = "riz_bomba",     qty = 5000, unit = "g" },
+  { ingredient = "poulet_cuisse", qty = 6000, unit = "g", note = "cuisses avec os" },
+  { ingredient = "moules",        qty = 5000, unit = "g", note = "servies en coquille" },
+  { ingredient = "safran",        qty = 1,    unit = "g" },
+  { ingredient = "poivron_rouge", qty = 2000, unit = "g", yield = 0.80, note = "épépinés" },
+  { ingredient = "tomate",        qty = 2000, unit = "g" },
+  { ingredient = "oignon",        qty = 1500, unit = "g", yield = 0.90 },
+  { ingredient = "huile_olive",   qty = 300,  unit = "ml" },
+]
+
+[recipes.gougeres]
+name      = "Gougère au comté, la pièce"
+activity  = "traiteur_sale"
+batch     = { qty = 50, unit = "unit" }
+portions  = 50
+price_ttc = 0.90
+vat       = 10.0
+per_week  = 400
+components = [
+  { recipe = "pate_a_choux", qty = 750, unit = "g", note = "15 g par pièce" },
+  { ingredient = "comte",    qty = 250, unit = "g" },
+]
+
+[recipes.mini_quiches]
+name      = "Mini-quiche lorraine, la pièce"
+activity  = "traiteur_sale"
+batch     = { qty = 48, unit = "unit" }
+portions  = 48
+price_ttc = 1.10
+vat       = 10.0
+per_week  = 384
+components = [
+  { recipe = "pate_brisee",        qty = 720, unit = "g", note = "15 g par pièce" },
+  { ingredient = "poitrine_fumee", qty = 400, unit = "g" },
+  { ingredient = "creme",          qty = 500, unit = "ml" },
+  { ingredient = "lait",           qty = 250, unit = "ml" },
+  { ingredient = "oeuf",           qty = 6,   unit = "unit" },
+  { ingredient = "comte",          qty = 150, unit = "g" },
+]
+
+[recipes.blanquette_traiteur]
+name      = "Blanquette de veau, riz pilaf, la part"
+activity  = "traiteur_sale"
+batch     = { qty = 30, unit = "unit" }
+portions  = 30
+price_ttc = 13.00
+vat       = 10.0
+per_week  = 90
+components = [
+  { recipe = "blanquette_base", qty = 30,   unit = "unit" },
+  { ingredient = "riz_long",    qty = 2100, unit = "g" },
+  { ingredient = "beurre",      qty = 300,  unit = "g" },
+]
+
+[recipes.terrine_entiere]
+name      = "Terrine de campagne entière, la tranche"
+activity  = "traiteur_sale"
+batch     = { qty = 20, unit = "unit" }
+portions  = 20
+price_ttc = 3.50
+vat       = 5.5
+per_week  = 60
+components = [
+  { recipe = "terrine_campagne", qty = 20, unit = "unit", note = "une terrine" },
+]
+
+# ---------------------------------------------------- pâtisserie, traiteur sucré
+
+[recipes.croissant]
+name      = "Croissant pur beurre"
+activity  = "traiteur_sucre"
+batch     = { qty = 20, unit = "unit" }
+portions  = 20
+price_ttc = 1.40
+vat       = 5.5
+per_week  = 300
+components = [
+  { recipe = "pate_croissant", qty = 1400, unit = "g", note = "70 g par pièce" },
+  { ingredient = "oeuf",       qty = 1,    unit = "unit", note = "dorure" },
+]
+
+[recipes.pain_chocolat]
+name      = "Pain au chocolat"
+activity  = "traiteur_sucre"
+batch     = { qty = 20, unit = "unit" }
+portions  = 20
+price_ttc = 1.50
+vat       = 5.5
+per_week  = 200
+components = [
+  { recipe = "pate_croissant",     qty = 1500, unit = "g", note = "75 g par pièce" },
+  { ingredient = "baton_chocolat", qty = 40,   unit = "unit", note = "deux par pièce" },
+  { ingredient = "oeuf",           qty = 1,    unit = "unit", note = "dorure" },
+]
+
+[recipes.tarte_citron_part]
+name      = "Tarte citron meringuée, la part"
+activity  = "traiteur_sucre"
+batch     = { qty = 1, unit = "unit" }
+portions  = 1
+price_ttc = 4.50
+vat       = 5.5
+per_week  = 90
+components = [
+  { recipe = "tarte_citron", qty = 1, unit = "unit", note = "une part" },
+]
+
+[recipes.eclair_chocolat]
+name      = "Éclair au chocolat"
+activity  = "traiteur_sucre"
+batch     = { qty = 20, unit = "unit" }
+portions  = 20
+price_ttc = 3.80
+vat       = 5.5
+per_week  = 100
+components = [
+  { recipe = "pate_a_choux",     qty = 800,  unit = "g", note = "40 g par pièce" },
+  { recipe = "creme_patissiere", qty = 1200, unit = "g", note = "60 g par pièce" },
+  { ingredient = "chocolat",     qty = 300,  unit = "g", note = "crème et glaçage" },
+  { ingredient = "fondant",      qty = 500,  unit = "g", note = "25 g par pièce" },
+]
+
+[recipes.paris_brest]
+name      = "Paris-brest individuel"
+activity  = "traiteur_sucre"
+batch     = { qty = 12, unit = "unit" }
+portions  = 12
+price_ttc = 4.50
+vat       = 5.5
+per_week  = 60
+components = [
+  { recipe = "pate_a_choux",              qty = 600, unit = "g", note = "50 g par pièce" },
+  { recipe = "creme_mousseline_pralinee", qty = 840, unit = "g", note = "70 g par pièce" },
+  { ingredient = "amande_effilee",        qty = 60,  unit = "g" },
+  { ingredient = "sucre_glace",           qty = 30,  unit = "g" },
+]
+
+[recipes.financier]
+name      = "Financier, la pièce"
+activity  = "traiteur_sucre"
+batch     = { qty = 30, unit = "unit" }
+portions  = 30
+price_ttc = 1.20
+vat       = 5.5
+per_week  = 240
+components = [
+  { ingredient = "blanc_oeuf",    qty = 300, unit = "g" },
+  { ingredient = "beurre",        qty = 300, unit = "g", note = "noisette" },
+  { ingredient = "sucre_glace",   qty = 330, unit = "g" },
+  { ingredient = "poudre_amande", qty = 150, unit = "g" },
+  { ingredient = "farine_t55",    qty = 110, unit = "g" },
+]

@@ -10,17 +10,21 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (27/10/2026) : fondations et démo écrites, auditées et testées ;
-extraction pas commencée.**
+**État actuel (11/11/2026) : fondations, démo et jeu de factures factices
+écrits et testés ; lecture des factures pas commencée.**
 
-- Écrit, 124 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 158 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
   (`001_schema.sql`, `002_rapport.sql`)
+- Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
+  `simulation.py`, `facturx.py`, `scripts/generate_corpus.py` — voir « Jeu de
+  factures factices » plus bas
 - Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
-- Pas encore écrit : `llm.py`, `extract.py`, écriture en base dans `db.py`,
-  `normalize.py`, `report.py`
-- Aucune facture annotée dans `data/truth/`, aucun appel à un modèle
+- Pas encore écrit : le lecteur de Factur-X, l'écriture en base dans `db.py`,
+  `normalize.py`, `llm.py`, `report.py`, le tableau de bord ; `extract.py`
+  (lecture papier) est reporté
+- Aucune vraie facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
 - Ouvert : la méthode de coût des carcasses (voir « Découpe de carcasse »),
@@ -28,7 +32,7 @@ extraction pas commencée.**
 - Documentation : `README.md` (vitrine), `JOURNAL.md` (les décisions et leurs
   raisons), `AUDIT.md` (audit du 20/09/2026), `COLLECTE.md` (jeu de vérité)
 - Intégration continue : `.github/workflows/ci.yml`, job `backend` — lint,
-  format et les 110 tests avec un vrai PostgreSQL
+  format et tous les tests avec un vrai PostgreSQL
 
 ## Comment je veux travailler
 
@@ -254,9 +258,24 @@ valeur relative par défaut.
 
 ## Ordre de construction
 
-Strictement séquentiel. Ne propose pas d'étape ultérieure tant que la
-précédente n'est pas finie. Seule exception : la démo, qui avance `db.py`
-(étape 5) — voir « Démo » plus bas.
+**Révisé le 11/11/2026 : facture électronique d'abord.** Depuis le
+1er septembre 2026 les factures arrivent au format Factur-X, dont les données
+se lisent sans modèle. La suite se construit sur le jeu factice, dans cet
+ordre, sans proposer une étape tant que la précédente n'est pas finie :
+
+1. Le lecteur de Factur-X (XML → `RawInvoice`), dans `facturx.py`
+2. L'écriture en base des factures lues, dans `db.py`
+3. `normalize.py` — rapprocher les libellés des ingrédients : c'est là que le
+   modèle de langage sert, donc `llm.py` arrive avec lui
+4. Le tableau de bord, alimenté par cette chaîne et non par un seed
+5. `report.py`
+
+La lecture papier (étapes 3 et 4 de la liste d'origine ci-dessous) est
+reportée, pas abandonnée : les petits fournisseurs ne sont tenus d'émettre en
+électronique qu'au 1er septembre 2027. Son code reste en place, sans être
+développé davantage.
+
+Liste d'origine, pour mémoire :
 
 1. `models.py` — contrats Pydantic (Invoice, InvoiceLine, confiance par champ)
 2. `scripts/evaluate.py` — le banc d'essai, **avant** l'extracteur. **Fait**
@@ -347,6 +366,48 @@ Le seed vit dans `db/seed/`, **pas** dans `db/migrations/` : tout ce qui est
 dans `migrations/` est appliqué automatiquement au premier démarrage de
 Postgres, y compris sur la base principale.
 
+## Jeu de factures factices, décidé le 11/11/2026
+
+**Pourquoi.** Les factures des établissements cobayes n'arrivent pas. Plutôt
+que d'attendre, toute la chaîne se construit sur un établissement inventé.
+
+**Ce que c'est.** `corpus/restaurant.toml` décrit « Maison Trébuchet » :
+restaurant, traiteur salé, pâtisserie ; 57 ingrédients, 38 recettes, 7
+fournisseurs. `simulation.py` en tire les ventes, les commandes, puis environ
+440 factures sur douze mois ; `make corpus` les écrit en PDF Factur-X dans
+`data/synthetic/`, chacune avec son annotation de vérité.
+
+**Règles.**
+
+- **Ce que le jeu prouve, et ce qu'il ne prouve pas.** Il prouve que la chaîne
+  fonctionne de bout en bout, avec une vérité exacte. Il ne prouve ni que
+  Gramme lit de vraies factures, ni que quelqu'un paiera. Ne jamais présenter
+  un score obtenu dessus comme une mesure de qualité.
+- **Jamais mélangé aux vraies factures.** Le factice vit dans
+  `data/synthetic/`, les vraies dans `data/raw/` : `make eval
+  CORPUS=data/synthetic` choisit l'un ou l'autre, jamais les deux.
+- **Fictif par construction.** Aucune enseigne réelle ; les SIREN échouent au
+  contrôle de Luhn (`world.py` refuse un SIREN valide) ; téléphones dans la
+  tranche réservée à la fiction ; mention « Document fictif » sur chaque PDF
+  et dans chaque XML.
+- **Prix réels, trajectoires inventées.** Le prix du fichier est un prix relevé
+  en octobre-novembre 2026 (cotations RNM de FranceAgriMer, catalogues Metro),
+  appliqué la dernière semaine ; chaque produit nomme sa source (`src`), et
+  `estimate` signale ceux qui n'en ont pas. Les hausses qui y mènent sont un
+  scénario.
+- **Dates relatives à aujourd'hui**, comme le seed de démo : relancer `make
+  corpus` avant une démonstration.
+- **Le simulateur calcule des montants en Python** : il joue le logiciel de
+  facturation des fournisseurs, extérieur au produit. La décision 2 vaut pour
+  Gramme, dont les calculs restent en SQL.
+- `make corpus` demande Chrome sur la machine ; les tests, non.
+
+**Limites connues.** Le PDF imprimé par Chrome n'est pas un PDF/A-3 certifié.
+Le XML est contrôlé contre le schéma officiel, pas contre les règles de gestion
+de la norme (elles demandent un serveur de validation) : nos tests vérifient
+sommes et TVA. La bibliothèque n'émet pas le profil BASIC : tout est au profil
+EN 16931.
+
 ## Contexte terrain
 
 - **Traiteur** (auto-entrepreneur, un seul fournisseur, surtout de la
@@ -367,6 +428,8 @@ Postgres, y compris sur la base principale.
 
 - Python 3.12, `uv` (jamais pip/poetry directement)
 - Pydantic v2, psycopg 3, SDK `openai` pointé vers MiniMax
+- `factur-x` (Akretion, BSD) pour écrire et relire les factures électroniques,
+  validée le 11/11/2026 ; tout passe par `src/gramme/facturx.py`
 - PostgreSQL 16 via Docker Compose, port 5433
 - ruff (lint + format), pytest, pre-commit
 - Modèle par défaut : MiniMax-M3, base_url `https://api.minimax.io/v1`
@@ -401,10 +464,17 @@ public » : données de prospection de `COLLECTE.md`, contexte commercial des de
 
 La V1 fait UNE chose : factures → prix → coûts matière → rapport du lundi.
 
-Hors périmètre pour l'instant : dashboard, gestion de stock, inventaires,
-connexion caisse, multi-établissements, appli mobile, authentification
+**Le tableau de bord est entré dans le périmètre le 11/11/2026** : il vient
+après la chaîne de lecture (voir « Ordre de construction »), jamais avant.
+
+Hors périmètre pour l'instant : gestion de stock, inventaires, connexion
+caisse, multi-établissements, appli mobile, authentification
 multi-utilisateurs, prévision de production. Si je dérive vers ça,
 rappelle-le-moi.
+
+**Avant toute mise en ligne sur un serveur** : la page d'envoi n'a aucune
+authentification, elle ne s'expose pas telle quelle ; et seul le jeu factice a
+sa place sur une machine publique.
 
 La démo en deux pages (voir plus haut) est une exception bornée et datée,
 pas une ouverture du périmètre : la page d'envoi n'est ni une appli mobile

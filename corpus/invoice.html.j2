@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>{{ title }} {{ invoice.number }}</title>
+<style>
+  /* Une facture tient sur une page A4 ; le tableau peut déborder sur une
+     seconde, auquel cas son en-tête se répète. */
+  @page { size: A4; margin: 0; }
+  :root { --accent: {{ supplier.color }}; --ink: #2B2B33; --soft: #6B6B76; --label: #2F3E8F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); font: 9.5pt/1.35 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .number { font-variant-numeric: tabular-nums; }
+
+  .band { height: 9mm; background: var(--accent); }
+  .header { display: flex; justify-content: space-between; gap: 10mm; padding: 7mm 14mm 6mm; background: #EDEDF0; }
+  .identity { display: flex; gap: 5mm; align-items: flex-start; }
+  .logo {
+    flex: none; width: 17mm; height: 17mm; border-radius: 50%; background: #4A4A52; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 9pt; letter-spacing: .04em;
+  }
+  .identity h1 { margin: 0 0 1mm; font-size: 12.5pt; }
+  .identity p { margin: 0; color: var(--soft); font-size: 8.5pt; }
+  .document { text-align: right; min-width: 62mm; }
+  .document .kind { font-size: 21pt; font-weight: 300; letter-spacing: .06em; color: #8A8A94; }
+  .document dl { margin: 3mm 0 0; display: grid; grid-template-columns: 1fr auto; gap: 1mm 4mm; }
+  .document dt { font-size: 7.5pt; font-weight: 700; letter-spacing: .08em; color: var(--soft); align-self: end; }
+  .document dd { margin: 0; padding-bottom: .6mm; border-bottom: .3mm solid #B9B9C2; min-width: 34mm; }
+
+  .terms { margin: 4mm 14mm 0; text-align: right; font-style: italic; font-size: 8.5pt; color: var(--soft); }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin: 4mm 14mm 6mm; }
+  .parties h2 {
+    margin: 0 0 1.5mm; padding-bottom: 1mm; border-bottom: .3mm solid #B9B9C2;
+    font-size: 7.5pt; letter-spacing: .08em; color: var(--label);
+  }
+  .parties p { margin: 0; }
+
+  table.lines { width: calc(100% - 28mm); margin: 0 14mm; border-collapse: collapse; }
+  .lines th {
+    background: var(--accent); color: #fff; font-size: 7.5pt; letter-spacing: .08em;
+    padding: 2mm 2.5mm; text-align: right; border-right: .3mm solid rgba(255, 255, 255, .5);
+  }
+  .lines th:first-child { text-align: center; }
+  .lines td { padding: 1.5mm 2.5mm; text-align: right; border-right: .3mm solid #D9D9DF; white-space: nowrap; }
+  .lines td:first-child { text-align: left; white-space: normal; }
+  .lines th:last-child, .lines td:last-child { border-right: 0; }
+  .lines tbody tr:nth-child(odd) { background: #F1F1F4; }
+  .lines tr { break-inside: avoid; }
+  .ref { color: var(--soft); font-size: 8pt; margin-right: 2mm; }
+
+  .footer { display: grid; grid-template-columns: 1fr 78mm; gap: 10mm; margin: 5mm 14mm 0; break-inside: avoid; }
+  .remarks { font-size: 8.5pt; color: var(--soft); }
+  .remarks strong { display: block; color: var(--ink); margin-bottom: 1mm; }
+  .totals { margin: 0; display: grid; grid-template-columns: 1fr auto; }
+  .totals dt, .totals dd { margin: 0; padding: 1.2mm 0; border-bottom: .3mm solid #D9D9DF; }
+  .totals dt { font-size: 7.5pt; font-weight: 700; letter-spacing: .06em; text-align: right; padding-right: 4mm; }
+  .totals dd { text-align: right; min-width: 26mm; }
+  .totals .due { border-bottom: 0; padding-top: 2.5mm; font-size: 11pt; letter-spacing: 0; }
+  .totals dd.due { background: #F6CFD0; padding-right: 2mm; font-weight: 700; }
+
+  .legal { position: fixed; left: 14mm; right: 14mm; bottom: 7mm; text-align: center; font-size: 7.5pt; color: var(--soft); }
+  .legal strong { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="band"></div>
+
+  <header class="header">
+    <div class="identity">
+      <div class="logo">{{ supplier.prefix }}</div>
+      <div>
+        <h1>{{ supplier.name }}</h1>
+        <p>{{ supplier.street }}<br>{{ supplier.zip }} {{ supplier.city }}</p>
+        <p>{{ supplier.phone }} · {{ supplier.email }}</p>
+      </div>
+    </div>
+    <div class="document">
+      <div class="kind">{{ title | upper }}</div>
+      <dl>
+        <dt>DATE</dt><dd class="number">{{ invoice.issued_on.strftime("%d/%m/%Y") }}</dd>
+        <dt>N° DE {{ title | upper }}</dt><dd class="number">{{ invoice.number }}</dd>
+      </dl>
+    </div>
+  </header>
+
+  <p class="terms">{{ supplier.terms }}</p>
+
+  <section class="parties">
+    <div>
+      <h2>FACTURER À</h2>
+      <p><strong>{{ buyer.legal }}</strong><br>{{ buyer.street }}<br>{{ buyer.zip }} {{ buyer.city }}<br>SIREN {{ buyer.siren }}</p>
+    </div>
+    <div>
+      <h2>ENVOYÉ À</h2>
+      <p><strong>{{ buyer.name }}</strong><br>{{ buyer.tagline }}<br>{{ buyer.street }}<br>{{ buyer.zip }} {{ buyer.city }}</p>
+    </div>
+  </section>
+
+  <table class="lines">
+    <thead>
+      <tr><th>DESCRIPTION</th><th>QTÉ</th><th>PRIX UNITAIRE</th><th>TVA</th><th>TOTAL</th></tr>
+    </thead>
+    <tbody>
+      {% for line in invoice.lines %}
+      <tr>
+        <td>{% if line.supplier_ref %}<span class="ref">{{ line.supplier_ref }}</span>{% endif %}{{ line.label }}</td>
+        <td class="number">{{ line.qty | qty }} {{ line.unit }}</td>
+        <td class="number">{{ line.unit_price | money }}</td>
+        <td class="number">{{ line.vat_rate | rate }}</td>
+        <td class="number">{{ line.total | money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <section class="footer">
+    <div class="remarks">
+      <strong>Remarques / instructions de paiement :</strong>
+      {% if invoice.credits %}Avoir sur la facture n° {{ invoice.credits }}.<br>{% endif %}
+      {{ supplier.terms }}.
+    </div>
+    <dl class="totals">
+      <dt>TOTAL</dt><dd class="number">{{ invoice.lines_total | money }}</dd>
+      {% for adjustment in discounts %}
+      <dt>{{ adjustment.label }}</dt><dd class="number">{{ adjustment.amount | money }}</dd>
+      {% endfor %}
+      {% for adjustment in charges %}
+      <dt>{{ adjustment.label }}</dt><dd class="number">{{ adjustment.amount | money }}</dd>
+      {% endfor %}
+      <dt>TOTAL HORS TAXES</dt><dd class="number">{{ invoice.total_ht | money }}</dd>
+      {% for rate, amount in invoice.vat_by_rate.items() %}
+      <dt>TVA {{ rate | rate }} SUR {{ invoice.tax_bases[rate] | money }}</dt><dd class="number">{{ amount | money }}</dd>
+      {% endfor %}
+      <dt>TAXE TOTALE</dt><dd class="number">{{ (invoice.total_ttc - invoice.total_ht) | money }}</dd>
+      <dt class="due">Solde dû</dt><dd class="number due">{{ invoice.total_ttc | money }} €</dd>
+    </dl>
+  </section>
+
+  <footer class="legal">
+    {{ supplier.legal }} · SIREN {{ supplier.siren }} · TVA {{ vat_number }}<br>
+    <strong>{{ notice }}</strong>
+  </footer>
+</body>
+</html>
