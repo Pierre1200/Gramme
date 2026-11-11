@@ -1,6 +1,7 @@
 """Banc d'essai : état du corpus, puis résultats de l'extraction.
 
-    make eval
+    make eval                          les vraies factures, dans data/
+    make eval CORPUS=data/synthetic    le jeu factice
 
 Tant que `data/truth/` est vide, seul l'état du corpus s'affiche : il dit ce
 qu'il manque pour qu'une mesure veuille dire quelque chose. Le banc s'active
@@ -10,21 +11,32 @@ CLI mince : toute la logique est dans `gramme.bench`, pour être testable sans
 lancer le script.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
-from gramme.bench import EXTRACTIONS_DIR, corpus_status, load_extractions, run_bench
+from gramme.bench import corpus_status, load_extractions, run_bench
 from gramme.scoring import Verdict
-from gramme.truth import TRUTH_DIR, load_truth
+from gramme.truth import load_truth
 
 MISMATCHES_SHOWN = 8
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # Vraies factures et factures factices ne partagent jamais un dossier :
+    # mélangées, elles donneraient une mesure qui ne décrit ni les unes ni les autres.
+    parser.add_argument("--corpus", type=Path, default=Path("data"))
+    corpus = parser.parse_args().corpus
+    truth_dir, extractions_dir = corpus / "truth", corpus / "extractions"
+
     try:
-        invoices = load_truth()
-    except FileNotFoundError:
-        print(f"Aucune annotation dans {TRUTH_DIR}.\n")
+        invoices = load_truth(truth_dir, corpus / "raw")
+    except FileNotFoundError as e:
+        if truth_dir.is_dir() and any(truth_dir.glob("*.json")):
+            print(e, file=sys.stderr)  # une annotation sans son document source
+            return 1
+        print(f"Aucune annotation dans {truth_dir}.\n")
         print("  1. ranger les documents :  uv run python scripts/store_documents.py <dossier>")
         print("  2. annoter un document   :  voir COLLECTE.md, « Format d'annotation »")
         return 0
@@ -32,16 +44,16 @@ def main() -> int:
         print(e, file=sys.stderr)
         return 1
 
-    _print_corpus(invoices)
-    _print_bench(invoices)
+    _print_corpus(invoices, truth_dir)
+    _print_bench(invoices, extractions_dir)
     return 0
 
 
-def _print_corpus(invoices) -> None:
+def _print_corpus(invoices, truth_dir: Path) -> None:
     status = corpus_status(invoices)
     qualities = ", ".join(f"{n} {q}" for q, n in status.by_quality.most_common())
 
-    print(f"CORPUS — {TRUTH_DIR}\n")
+    print(f"CORPUS — {truth_dir}\n")
     print(f"  {status.invoices} document(s) annoté(s) : {qualities}")
     if status.longest_series_supplier:
         print(
@@ -61,9 +73,9 @@ def _print_corpus(invoices) -> None:
             print(f"    - {gap}")
 
 
-def _print_bench(invoices) -> None:
-    extractions = load_extractions()
-    print(f"\nBANC D'ESSAI — {EXTRACTIONS_DIR}\n")
+def _print_bench(invoices, extractions_dir: Path) -> None:
+    extractions = load_extractions(extractions_dir)
+    print(f"\nBANC D'ESSAI — {extractions_dir}\n")
 
     if not extractions:
         print("  Aucune extraction : le banc s'activera quand extract.py en produira.")
