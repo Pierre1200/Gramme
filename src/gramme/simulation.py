@@ -45,6 +45,11 @@ LOOKAHEAD = timedelta(days=14)
 _HIDDEN_PACK = re.compile(r"\d+\s?X\s?\d")
 
 
+def percent(rate: Decimal) -> str:
+    """Un taux tel qu'on l'imprime : 2 %, 5,5 %."""
+    return format(rate.normalize(), "f").replace(".", ",") + " %"
+
+
 def money(amount: Decimal) -> Decimal:
     """Arrondi commercial au centime : 105,875 s'imprime 105,88."""
     return amount.quantize(CENT, rounding=ROUND_HALF_UP)
@@ -394,7 +399,7 @@ def _build(
 
     rates = sorted({line.vat_rate for line in lines})
     if len(rates) > 1:
-        pitfalls.append("TVA mixte : " + ", ".join(f"{rate} %" for rate in rates))
+        pitfalls.append("TVA mixte : " + ", ".join(percent(rate) for rate in rates))
 
     if supplier.footer_discount:
         # La remise suit le taux de TVA de ce qu'elle réduit, sinon la TVA
@@ -403,13 +408,13 @@ def _build(
             base = sum((line.total for line in lines if line.vat_rate == rate), Decimal(0))
             adjustments.append(
                 Adjustment(
-                    f"REMISE CONTRACTUELLE {supplier.footer_discount} %",
+                    f"REMISE {percent(supplier.footer_discount)} SUR TVA {percent(rate)}",
                     -money(base * supplier.footer_discount / 100),
                     rate,
                 )
             )
         pitfalls.append(
-            f"remise de pied de facture de {supplier.footer_discount} %, "
+            f"remise de pied de facture de {percent(supplier.footer_discount)}, "
             "appliquée après le total des lignes"
         )
 
