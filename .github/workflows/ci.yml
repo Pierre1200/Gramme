@@ -35,6 +35,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://gramme:gramme@localhost:5433/gramme
       DEMO_DATABASE_URL: postgresql://gramme:gramme@localhost:5433/gramme_demo
+      SYNTHETIC_DATABASE_URL: postgresql://gramme:gramme@localhost:5433/gramme_synthetic
 
     steps:
       - name: Check out the repository

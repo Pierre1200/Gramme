@@ -109,6 +109,14 @@ class TestReader:
         assert got.lines[0].qty.value < 0
         assert got.lines[0].unit_price_ht.value > 0  # un prix ne devient jamais négatif
 
+    def test_the_supplier_siren_and_line_vat_rates_are_read(self, world, corpus):
+        invoice = next(i for i in corpus.invoices if i.supplier == "grossiste")
+        got = read_xml(build_xml(world, invoice))
+        assert got.supplier_siren == world.suppliers["grossiste"].siren
+        assert [line.vat_rate.value for line in got.lines] == [
+            line.vat_rate for line in invoice.lines
+        ]
+
     def test_the_article_reference_is_kept_when_there_is_one(self, world, corpus):
         with_refs = next(i for i in corpus.invoices if i.supplier == "boucherie")
         without = next(i for i in corpus.invoices if i.supplier == "primeur")

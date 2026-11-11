@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # jamais toucher une donnée client.
     demo_database_url: str
 
+    # Base du jeu de factures factices (`make synthetic-db`). Optionnelle : seul
+    # celui qui fabrique le jeu en a besoin. Jamais la base principale, pour que
+    # des factures inventées ne se mêlent pas aux vraies.
+    synthetic_database_url: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

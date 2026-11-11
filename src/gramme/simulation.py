@@ -37,6 +37,10 @@ MIN_WEIGHED_QTY = Decimal("0.150")
 # Les ventes du jour s'écartent de la moyenne, le cours du jour aussi.
 SALES_NOISE = 0.12
 MARKET_NOISE = 0.025
+# Fichier déposé à la racine d'un jeu factice généré : c'est lui qui distingue
+# un dossier de factures inventées d'un dossier de vraies factures.
+CORPUS_MARKER = ".generated-by-gramme"
+
 # La simulation déborde de la période, puis l'excédent est écarté : sans cela
 # la dernière commande n'aurait pas de « livraison suivante » pour borner ce
 # qu'elle couvre.

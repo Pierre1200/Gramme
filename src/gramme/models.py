@@ -110,10 +110,9 @@ class RawInvoiceLine(BaseModel):
 
     qty: Extracted[Decimal]
 
-    # L'unité TELLE QU'IMPRIMÉE : "KG", "CT", "PCE", "L", "COLIS"...
-    # Non normalisée — la conversion en unité de base est le travail de
-    # normalize.py. Pas encore de colonne pour l'accueillir côté SQL :
-    # cf. 001_schema.sql, section « PIÈGES À TRAITER ENSUITE ».
+    # L'unité TELLE QU'IMPRIMÉE : "KG", "CT", "PCE", "L", "COLIS"... (un code
+    # de norme, « XCT », pour une facture électronique). Non normalisée — la
+    # conversion en unité de base est le travail de normalize.py.
     raw_unit: Extracted[str]
 
     unit_price_ht: Extracted[Decimal]
@@ -121,6 +120,11 @@ class RawInvoiceLine(BaseModel):
     # Lu sur le papier, JAMAIS déduit de qty * unit_price_ht. C'est
     # précisément ce qui rend le recoupement arithmétique possible.
     line_total_ht: Extracted[Decimal]
+
+    # Taux de TVA de la ligne, en pourcentage. Optionnel : beaucoup de
+    # factures papier ne l'impriment qu'en pied. Il compte pour un client en
+    # franchise de TVA, dont le coût réel est le TTC.
+    vat_rate: Extracted[Decimal] | None = None
 
     def check_arithmetic(self, tolerance: Decimal = ARITHMETIC_TOLERANCE) -> ArithmeticCheck:
         """Recoupe qty × unit_price_ht contre le total imprimé sur la ligne.
@@ -169,6 +173,10 @@ class RawInvoice(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     supplier_name: Extracted[str]
+    # SIREN du fournisseur : c'est lui, pas le nom, qui reconnaît un
+    # fournisseur déjà connu. Nu comme `raw_label` : sur une facture
+    # électronique il est structuré, sur papier on s'en passe.
+    supplier_siren: str | None = None
     invoice_number: Extracted[str]
     invoice_date: Extracted[date]
     total_ht: Extracted[Decimal]

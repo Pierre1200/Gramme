@@ -147,5 +147,7 @@ def test_the_sql_tolerance_follows_the_python_one():
     Les deux valeurs doivent bouger ensemble : ce test casse si l'une change
     sans l'autre.
     """
-    sql = Path("db/migrations/002_rapport.sql").read_text(encoding="utf-8")
-    assert f"> {INVOICE_TOTAL_TOLERANCE}" in sql
+    # La dernière migration qui redéfinit la vue est celle qui s'applique.
+    migrations = sorted(Path("db/migrations").glob("*.sql"))
+    latest = [m for m in migrations if "VIEW report_flags" in m.read_text(encoding="utf-8")][-1]
+    assert f"> {INVOICE_TOTAL_TOLERANCE}" in latest.read_text(encoding="utf-8")
