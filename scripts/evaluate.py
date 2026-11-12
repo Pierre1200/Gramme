@@ -1,4 +1,4 @@
-"""Banc d'essai : état du corpus, puis résultats de l'extraction.
+"""Banc d'essai : état du corpus, résultats de l'extraction, puis du rapprochement.
 
     make eval                          les vraies factures, dans data/
     make eval CORPUS=data/synthetic    le jeu factice
@@ -15,8 +15,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from gramme.bench import corpus_status, load_extractions, run_bench
-from gramme.scoring import Verdict
+from gramme.bench import (
+    MAPPING_PROPOSALS,
+    corpus_status,
+    load_extractions,
+    load_mappings,
+    run_bench,
+)
+from gramme.scoring import Verdict, product_spend, score_mappings
 from gramme.truth import load_truth
 
 MISMATCHES_SHOWN = 8
@@ -46,6 +52,11 @@ def main() -> int:
 
     _print_corpus(invoices, truth_dir)
     _print_bench(invoices, extractions_dir)
+    try:
+        _print_mapping(invoices, corpus)
+    except ValueError as e:  # vérité ou réponse invalide : l'entrée fautive est nommée
+        print(e, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -114,6 +125,40 @@ def _print_bench(invoices, extractions_dir: Path) -> None:
 
     if not_extracted:
         print(f"\n  non extraits : {', '.join(Path(f).name for f in not_extracted)}")
+
+
+def _print_mapping(invoices, corpus: Path) -> None:
+    mappings = load_mappings(corpus)
+    if mappings is None:
+        return
+    truths, proposals = mappings
+    print(f"\nRAPPROCHEMENT — {corpus / MAPPING_PROPOSALS}\n")
+    print(f"  {len(truths)} produit(s) dans la vérité, {len(proposals)} réponse(s)")
+    if not proposals:
+        print("  Aucune proposition : le rapprochement s'activera avec normalize.py.")
+        return
+
+    score = score_mappings(truths, proposals, product_spend(invoices))
+    # La part des achats d'abord : c'est elle que le rapport du lundi affiche faux.
+    print(f"\n  achats mal valorisés  {score.wrong_share:6.1%}")
+    print(f"  achats à valider      {score.share(Verdict.ABSTAINED):6.1%}")
+    print(f"  achats justes         {score.share(Verdict.CORRECT):6.1%}")
+    print(f"  achats non traités    {score.not_processed_share:6.1%}")
+    print(
+        f"\n  produits : {score.products[Verdict.WRONG]} faux, "
+        f"{score.products[Verdict.ABSTAINED]} à valider, "
+        f"{score.products[Verdict.CORRECT]} justes, {len(score.not_processed)} non traités"
+    )
+    if score.unknown:
+        print(f"  réponses hors vérité, ignorées : {', '.join(score.unknown)}")
+    if score.mismatches:
+        shown = min(len(score.mismatches), MISMATCHES_SHOWN)
+        print(f"\n  divergences ({shown} sur {len(score.mismatches)}) :")
+        for mismatch in score.mismatches[:MISMATCHES_SHOWN]:
+            print(
+                f"    [{mismatch.verdict:<9}] {mismatch.field:<44} "
+                f"attendu {mismatch.expected:<20} obtenu {mismatch.got}"
+            )
 
 
 if __name__ == "__main__":

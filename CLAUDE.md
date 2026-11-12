@@ -14,7 +14,7 @@ d'architecture Python l'est moins.
 lecteur de factures électroniques et écriture en base écrits et testés ;
 normalisation pas commencée.**
 
-- Écrit, 185 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 195 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
   (`001_schema.sql`, `002_rapport.sql`, `003_invoice_detail.sql`)
 - Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
@@ -35,6 +35,11 @@ normalisation pas commencée.**
   ingrédients et 38 recettes de `restaurant.toml` dans `gramme_synthetic`
   (`make synthetic-db` le fait avant les factures). Le moteur de coût SQL et
   le simulateur s'accordent sur les 22 produits vendus
+- Barème du rapprochement : `models.ProductMapping` (la réponse attendue du
+  normalisateur), `truth.MappingTruth`, `scoring.score_mappings`. Chiffre de
+  tête : la part des achats HT mal valorisée. La vérité du jeu factice est
+  écrite par `make corpus` dans `data/synthetic/mapping/truth.json` ; `make
+  eval` l'affiche en section RAPPROCHEMENT
 - Pas encore écrit : `normalize.py`, `llm.py`, `report.py`, le tableau de
   bord ; `extract.py` (lecture papier) est reporté
 - Aucune vraie facture annotée dans `data/truth/`, aucun appel à un modèle
@@ -286,7 +291,8 @@ ordre, sans proposer une étape tant que la précédente n'est pas finie :
 3. `normalize.py` — rapprocher les libellés des ingrédients : c'est là que le
    modèle de langage sert, donc `llm.py` arrive avec lui. Découpée le 12/11 en
    sous-étapes, une PR chacune : le référentiel du jeu factice en base
-   (**fait**) ; le barème du rapprochement ; `llm.py` et le premier prompt ;
+   (**fait**) ; le barème du rapprochement (**fait**) ; `llm.py` et le premier
+   prompt, une fois le fournisseur de modèle choisi ;
    `normalize.py` lui-même. Le trou connu n° 1 (ingrédient sans prix ignoré)
    se corrige avant le tableau de bord
 4. Le tableau de bord, alimenté par cette chaîne et non par un seed
