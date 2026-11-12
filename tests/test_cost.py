@@ -84,12 +84,14 @@ def component(cur, parent: int, qty: int, *, ingredient=None, child=None, ratio=
     )
 
 
-def cost(cur, recipe_id: int, days_ago: int | None = None) -> Decimal:
+def cost(cur, recipe_id: int, days_ago: int | None = None) -> Decimal | None:
+    """Le coût arrondi au centime, ou None quand la base le déclare inconnu."""
     if days_ago is None:
         cur.execute("SELECT recipe_cost(%s)", (recipe_id,))
     else:
         cur.execute("SELECT recipe_cost_at(%s, CURRENT_DATE - %s)", (recipe_id, days_ago))
-    return cur.fetchone()[0].quantize(Decimal("0.01"))
+    value = cur.fetchone()[0]
+    return None if value is None else value.quantize(Decimal("0.01"))
 
 
 class TestRecipeCost:
@@ -127,27 +129,100 @@ class TestCostAtADate:
         assert cost(cur, dish, days_ago=42) == Decimal("7.42")
         assert cost(cur, dish) == Decimal("8.76")
 
-    def test_it_ignores_later_prices(self, cur):
+    def test_before_the_first_price_the_cost_is_unknown(self, cur):
+        # Un prix relevé il y a 10 jours ne dit rien du coût d'il y a 6 semaines.
         butter = ingredient_priced_at(cur, "beurre", "0.008", days_ago=10)
         dish = recipe(cur, "plat")
         component(cur, dish, 1000, ingredient=butter)
-        assert cost(cur, dish, days_ago=42) == Decimal("0.00")
+        assert cost(cur, dish, days_ago=42) is None
 
 
-class TestKnownLimit:
-    def test_an_ingredient_without_a_price_vanishes_silently(self, cur):
-        """Verrouille un défaut ACTUEL, documenté dans CLAUDE.md.
+class TestMissingPrice:
+    """Un ingrédient sans prix rend le coût inconnu, jamais plus bas (004).
 
-        La jointure interne fait disparaître un ingrédient sans prix : le coût
-        est sous-estimé sans aucun avertissement. Le jour où c'est corrigé, ce
-        test doit casser et être réécrit — c'est voulu.
-        """
+    Avant 004, il disparaissait du total : 8,00 € au lieu de « on ne sait pas ».
+    """
+
+    def test_an_unpriced_ingredient_makes_the_cost_unknown(self, cur):
         butter = ingredient_priced_at(cur, "beurre", "0.008")
-        unpriced = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
+        saffron = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
         dish = recipe(cur, "plat")
         component(cur, dish, 1000, ingredient=butter)
-        component(cur, dish, 1, ingredient=unpriced)
-        assert cost(cur, dish) == Decimal("8.00")  # le safran n'est pas compté
+        component(cur, dish, 1, ingredient=saffron)
+        assert cost(cur, dish) is None
+
+    def test_the_unknown_rises_through_a_sub_recipe(self, cur):
+        butter = ingredient_priced_at(cur, "beurre", "0.008")
+        vanilla = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('vanille', 'g')")
+        cream = recipe(cur, "crème pâtissière", yield_qty=1000)
+        component(cur, cream, 2, ingredient=vanilla)
+        tart = recipe(cur, "tarte")
+        component(cur, tart, 200, ingredient=butter)
+        component(cur, tart, 400, child=cream)
+        assert cost(cur, tart) is None
+
+    def test_a_price_on_an_unconfirmed_product_does_not_count(self, cur):
+        # Tant qu'un humain n'a pas confirmé le rattachement, ce prix n'est pas
+        # celui de l'ingrédient.
+        butter = ingredient_priced_at(cur, "beurre", "0.008")
+        cur.execute(
+            "UPDATE supplier_product SET status = 'pending' WHERE ingredient_id = %s", (butter,)
+        )
+        dish = recipe(cur, "plat")
+        component(cur, dish, 1000, ingredient=butter)
+        assert cost(cur, dish) is None
+
+    def test_a_recipe_without_components_still_costs_nothing(self, cur):
+        # Rien ne manque : 0 est un coût connu, pas un coût inconnu.
+        assert cost(cur, recipe(cur, "vide")) == Decimal("0.00")
+
+    def test_the_report_names_the_missing_ingredient(self, cur):
+        rice = ingredient_priced_at(cur, "riz", "0.0036")
+        saffron = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
+        dish = recipe(cur, "risotto", portions=1, price="12.00")
+        component(cur, dish, 1000, ingredient=rice)
+        component(cur, dish, 1, ingredient=saffron)
+        cur.execute(
+            "SELECT cost_per_portion, margin_per_portion, ratio, drift_points, level,"
+            " missing_prices FROM report_margins WHERE recipe_id = %s",
+            (dish,),
+        )
+        assert cur.fetchone() == (None, None, None, None, None, ["safran"])
+
+    def test_a_new_ingredient_makes_no_false_alert(self, cur):
+        # Acheté pour la première fois il y a 10 jours : le coût d'aujourd'hui
+        # est connu, celui d'il y a 6 semaines non. Avant 004, le coût d'avant
+        # valait 0 et le plat partait en alerte à +87 points.
+        butter = ingredient_priced_at(cur, "beurre", "0.00876", days_ago=10)
+        dish = recipe(cur, "croissant", portions=1, price="11.00")  # 10,00 € HT
+        component(cur, dish, 1000, ingredient=butter)
+        cur.execute(
+            "SELECT ratio, ratio_before, drift_points, level, missing_prices"
+            " FROM report_margins WHERE recipe_id = %s",
+            (dish,),
+        )
+        assert cur.fetchone() == (Decimal("87.6"), None, None, None, [])
+
+    def test_a_missing_price_is_flagged_once(self, cur):
+        saffron = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
+        for name in ("risotto", "paella"):
+            dish = recipe(cur, name, portions=1, price="12.00")
+            component(cur, dish, 1, ingredient=saffron)
+        cur.execute(
+            "SELECT reason, supplier, invoice_date, gap FROM report_flags WHERE label = 'safran'"
+        )
+        assert cur.fetchall() == [("missing_price", None, None, None)]
+
+    def test_an_unknown_dish_is_not_counted_as_an_alert(self, cur):
+        cur.execute("SELECT dishes_on_alert, items_to_check FROM report_summary")
+        alerts, to_check = cur.fetchone()
+
+        saffron = insert(cur, "INSERT INTO ingredient (name, base_unit) VALUES ('safran', 'g')")
+        dish = recipe(cur, "risotto", portions=1, price="12.00")
+        component(cur, dish, 1, ingredient=saffron)
+
+        cur.execute("SELECT dishes_on_alert, items_to_check FROM report_summary")
+        assert cur.fetchone() == (alerts, to_check + 1)
 
 
 class TestReportViews:
