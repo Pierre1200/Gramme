@@ -10,15 +10,21 @@ après un changement de barème ne doit ni rappeler le modèle, ni repayer des
 tokens.
 """
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from gramme.models import RawInvoice
+from gramme.models import ProductMapping, RawInvoice
 from gramme.scoring import CorpusScore, InvoiceScore, aggregate, score_invoice
-from gramme.truth import SourceQuality, TruthInvoice
+from gramme.truth import MappingTruth, SourceQuality, TruthInvoice, load_mapping_truth
 
 EXTRACTIONS_DIR = Path("data/extractions")
+
+# Le rapprochement se note produit par produit, pas document par document :
+# un fichier pour la vérité, un pour les réponses du normalisateur.
+MAPPING_TRUTH = Path("mapping/truth.json")
+MAPPING_PROPOSALS = Path("mapping/proposals.json")
 
 # Critères de sortie de la collecte, repris de COLLECTE.md. Ce ne sont pas des
 # seuils de qualité : ce sont les conditions pour qu'une mesure soit crédible.
@@ -137,3 +143,25 @@ def run_bench(
             scores.append(score_invoice(invoice, extraction))
 
     return aggregate(scores), not_extracted
+
+
+def load_mappings(corpus: Path) -> tuple[list[MappingTruth], list[ProductMapping]] | None:
+    """La vérité du rapprochement d'un corpus, et les réponses à noter.
+
+    `None` tant qu'aucune vérité n'existe ; une liste de réponses vide tant que
+    le normalisateur n'a rien produit.
+    """
+    truth_file = corpus / MAPPING_TRUTH
+    if not truth_file.exists():
+        return None
+    truths = load_mapping_truth(truth_file)
+
+    proposals_file = corpus / MAPPING_PROPOSALS
+    if not proposals_file.exists():
+        return truths, []
+    entries = json.loads(proposals_file.read_text(encoding="utf-8"))
+    try:
+        proposals = [ProductMapping.model_validate(entry) for entry in entries]
+    except ValueError as e:
+        raise ValueError(f"{proposals_file} : réponse invalide\n{e}") from e
+    return truths, proposals
