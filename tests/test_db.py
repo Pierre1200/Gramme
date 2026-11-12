@@ -38,9 +38,19 @@ def test_the_tile_matches_the_list(report):
 def test_known_levels_only(report):
     # Le template associe une couleur à chaque niveau : un niveau inconnu
     # s'afficherait sans style.
-    assert {m.level for m in report.margins} <= {"ok", "vigilance", "alerte"}
+    # None : dérive inconnue, carte « Pas de recul » ou « Coût incomplet ».
+    assert {m.level for m in report.margins} <= {"ok", "vigilance", "alerte", None}
 
 
 def test_dishes_are_sorted_from_most_drifting_to_most_stable(report):
+    # Les dérives inconnues ferment la liste : les alertes d'abord.
     drifts = [m.drift_points for m in report.margins]
-    assert drifts == sorted(drifts, reverse=True)
+    known = [d for d in drifts if d is not None]
+    assert drifts == sorted(known, reverse=True) + [None] * (len(drifts) - len(known))
+
+
+def test_the_demo_has_no_incomplete_dish(report):
+    # La démo montre des cartes complètes : un prix manquant dans le seed
+    # afficherait « Coût incomplet » devant l'établissement.
+    assert all(not m.missing_prices for m in report.margins)
+    assert all(f.reason != "missing_price" for f in report.flags)
