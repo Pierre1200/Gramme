@@ -359,3 +359,35 @@ doublerait le référentiel sans erreur visible. La base factice se recrée de z
 ingrédient n'a encore de prix : le moteur de coût les ignore en silence et rend
 0 €. C'est le trou connu n° 1, jusqu'ici théorique. Il sera corrigé avant que le
 tableau de bord n'affiche le moindre coût.
+
+## 12/11/2026 — Le barème du rapprochement
+
+**Avant le code qui rapproche, ce que « bien rapprocher » veut dire.** Même
+discipline que pour la lecture. Pour chaque produit fournisseur, le
+normalisateur devra dire à quel ingrédient il correspond — ou qu'il n'en est pas
+un, ou qu'il ne sait pas — et ce que contient une unité facturée : un carton de
+« BEURRE DOUX 82% 10X1KG » contient 10 000 g. Une erreur sur ce contenu fausse
+le prix au gramme d'un facteur entier, sans que rien ne le signale.
+
+**Le chiffre qui fait foi est en euros.** Une erreur sur le beurre, acheté
+chaque semaine, ne coûte pas ce que coûte une erreur sur la vanille. Le barème
+pèse donc chaque produit par sa dépense nette sur le corpus, avoirs déduits, et
+annonce d'abord la part des achats mal valorisée. Le décompte produit par
+produit reste affiché dessous, pour savoir lesquels ont cassé.
+
+**Nier un ingrédient est une faute, pas une prudence.** Dire « je ne sais pas »
+envoie le produit en validation : c'est une abstention, qui coûte du temps
+humain. Dire « ce n'est pas un ingrédient » n'envoie rien à personne : si c'est
+faux, le coût du beurre disparaît des recettes en silence. La réponse reprend
+les trois états d'un champ lu, et donc la matrice du barème de lecture, sans en
+réécrire une.
+
+**Un barème éprouvé avant d'avoir servi.** Trois normalisateurs factices : celui
+qui recopie la vérité n'a jamais faux ; celui qui envoie tout en validation n'a
+jamais faux mais jamais juste ; celui qui compte un carton de beurre pour un
+gramme est faux sur la part exacte des achats de beurre. Un barème qui ne les
+distinguerait pas ne mesurerait rien.
+
+**La même clé que la base.** Un produit se reconnaît à son fournisseur (SIREN, à
+défaut nom) et à sa référence (à défaut son libellé), exactement comme à
+l'écriture : la vérité compte 66 produits, ceux que les factures créent en base.
