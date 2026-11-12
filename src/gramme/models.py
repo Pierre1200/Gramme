@@ -209,3 +209,67 @@ class RawInvoice(BaseModel):
         summed = sum(amounts, Decimal(0))
 
         return ArithmeticCheck.OK if abs(summed - total) <= tolerance else ArithmeticCheck.MISMATCH
+
+
+# ------------------------------------------------------------ rapprochement
+
+
+type ProductKey = tuple[str, str, str]
+
+
+def product_key(
+    supplier_siren: str | None, supplier_name: str, supplier_ref: str | None, raw_label: str
+) -> ProductKey:
+    """Ce qui identifie un produit fournisseur, comme l'écriture en base.
+
+    Le fournisseur par son SIREN, à défaut par son nom ; le produit par sa
+    référence, à défaut par son libellé. Une règle différente ici et dans
+    `db.store_invoice` apparierait la vérité à d'autres produits que ceux de
+    la base.
+    """
+    supplier = supplier_siren or supplier_name
+    if supplier_ref:
+        return supplier, "ref", supplier_ref
+    return supplier, "label", raw_label
+
+
+class ProductMapping(BaseModel):
+    """Ce que la normalisation répond pour UN produit fournisseur.
+
+    `ingredient` reprend les trois états d'un champ lu, avec un sens précis :
+      - READ       : le nom de l'ingrédient du référentiel ;
+      - UNREADABLE : « je ne sais pas » — part en validation humaine ;
+      - ABSENT     : « ce produit n'est pas un ingrédient » (film, consigne,
+        boisson revendue).
+    Nier un ingrédient n'envoie rien à personne : si c'est faux, son coût
+    disparaît des recettes en silence. C'est pourquoi le barème le compte
+    faux, et non comme une abstention.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supplier_siren: str | None = None
+    supplier_name: str = Field(min_length=1)
+    supplier_ref: str | None = None
+    raw_label: str = Field(min_length=1)
+
+    ingredient: Extracted[str]
+    # Contenu d'UNE unité facturée, dans l'unité de base de l'ingrédient :
+    # « 1 CT » de beurre en carton de 10 × 1 kg contient 10 000 g. Lu dans le
+    # libellé, jamais calculé à partir d'un prix.
+    pack_qty: Extracted[Decimal]
+
+    @model_validator(mode="after")
+    def _check_pack_follows_ingredient(self) -> Self:
+        if (
+            self.ingredient.status is FieldStatus.ABSENT
+            and self.pack_qty.status is not FieldStatus.ABSENT
+        ):
+            raise ValueError("un produit qui n'est pas un ingrédient n'a pas de contenu")
+        return self
+
+    @property
+    def key(self) -> ProductKey:
+        return product_key(
+            self.supplier_siren, self.supplier_name, self.supplier_ref, self.raw_label
+        )

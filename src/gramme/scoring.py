@@ -16,8 +16,16 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
 
-from gramme.models import Extracted, FieldStatus, RawInvoice, RawInvoiceLine
-from gramme.truth import SourceQuality, TruthInvoice, TruthLine
+from gramme.models import (
+    Extracted,
+    FieldStatus,
+    ProductKey,
+    ProductMapping,
+    RawInvoice,
+    RawInvoiceLine,
+    product_key,
+)
+from gramme.truth import MappingTruth, SourceQuality, TruthInvoice, TruthLine
 
 # Champs comparés, par niveau. `raw_label` n'y figure pas : il sert de clé
 # d'appariement des lignes, il est donc évalué par l'appariement lui-même.
@@ -275,3 +283,120 @@ def aggregate(scores: list[InvoiceScore]) -> CorpusScore:
         critical_wrong=sum(s.critical_wrong for s in scores),
         invoices=scores,
     )
+
+
+# ------------------------------------------------------------ rapprochement
+#
+# Une erreur de rapprochement ne se voit nulle part : un beurre rattaché à la
+# crème, ou un carton de 10 kg compté pour 1 kg, donne un prix au gramme faux
+# que le rapport affiche avec aplomb. D'où le chiffre de tête : la part des
+# achats que de telles erreurs faussent, pas le nombre de produits ratés.
+
+
+def product_spend(invoices: list[TruthInvoice]) -> dict[ProductKey, Decimal]:
+    """Dépense HT nette de chaque produit sur le corpus, avoirs déduits."""
+    spend: dict[ProductKey, Decimal] = {}
+    for invoice in invoices:
+        for line in invoice.lines:
+            if line.line_total_ht is None:
+                continue
+            key = product_key(
+                invoice.supplier_siren,
+                invoice.supplier_name or "",
+                line.supplier_ref,
+                line.raw_label,
+            )
+            spend[key] = spend.get(key, Decimal(0)) + line.line_total_ht
+    return spend
+
+
+@dataclass
+class MappingScore:
+    """Le rapprochement noté produit par produit, et pondéré par les achats.
+
+    Le poids d'un produit est la valeur absolue de sa dépense nette : un retour
+    de consigne pèse ce qu'il rembourse.
+    """
+
+    products: Counter[Verdict] = field(default_factory=Counter)
+    weight: dict[Verdict, Decimal] = field(default_factory=dict)
+    # Sans réponse : le produit reste à valider. Ce n'est pas une erreur du
+    # normalisateur, c'est un trou dans son lot — même logique que les
+    # documents non extraits.
+    not_processed: list[str] = field(default_factory=list)
+    not_processed_weight: Decimal = Decimal(0)
+    # Réponses pour un produit absent de la vérité : ignorées, mais nommées.
+    unknown: list[str] = field(default_factory=list)
+    mismatches: list[Mismatch] = field(default_factory=list)
+
+    @property
+    def total_weight(self) -> Decimal:
+        return sum(self.weight.values(), Decimal(0)) + self.not_processed_weight
+
+    def share(self, verdict: Verdict) -> float:
+        total = self.total_weight
+        return float(self.weight.get(verdict, 0) / total) if total else 0.0
+
+    @property
+    def wrong_share(self) -> float:
+        """Le chiffre qui fait foi : la part des achats mal valorisée."""
+        return self.share(Verdict.WRONG)
+
+    @property
+    def not_processed_share(self) -> float:
+        total = self.total_weight
+        return float(self.not_processed_weight / total) if total else 0.0
+
+
+def score_mappings(
+    truths: list[MappingTruth],
+    proposals: list[ProductMapping],
+    spend: dict[ProductKey, Decimal],
+) -> MappingScore:
+    """Compare les réponses du normalisateur au bon rapprochement.
+
+    Deux champs par produit : l'ingrédient, puis le contenu d'une unité
+    facturée, noté seulement pour un ingrédient. Le produit prend le pire de
+    ses verdicts : un contenu faux suffit à fausser tout son prix au gramme.
+    """
+    score = MappingScore()
+    by_key = {proposal.key: proposal for proposal in proposals}
+    known = {truth.key for truth in truths}
+    score.unknown = [p.raw_label for p in proposals if p.key not in known]
+
+    for truth in truths:
+        weight = abs(spend.get(truth.key, Decimal(0)))
+        proposal = by_key.get(truth.key)
+        if proposal is None:
+            score.not_processed.append(truth.raw_label)
+            score.not_processed_weight += weight
+            continue
+
+        verdicts = [score_field(truth.ingredient, False, proposal.ingredient)]
+        fields = [("ingrédient", truth.ingredient, proposal.ingredient)]
+        if truth.ingredient is not None:
+            verdicts.append(score_field(truth.pack_qty, False, proposal.pack_qty))
+            fields.append(("contenu", truth.pack_qty, proposal.pack_qty))
+
+        for (name, expected, got), verdict in zip(fields, verdicts, strict=True):
+            if verdict is not Verdict.CORRECT:
+                score.mismatches.append(
+                    Mismatch(
+                        field=f"{truth.raw_label} : {name}",
+                        expected=_display(expected, unreadable=False),
+                        got=_display(got.value, got.status is FieldStatus.UNREADABLE),
+                        verdict=verdict,
+                    )
+                )
+
+        worst = (
+            Verdict.WRONG
+            if Verdict.WRONG in verdicts
+            else Verdict.ABSTAINED
+            if Verdict.ABSTAINED in verdicts
+            else Verdict.CORRECT
+        )
+        score.products[worst] += 1
+        score.weight[worst] = score.weight.get(worst, Decimal(0)) + weight
+
+    return score

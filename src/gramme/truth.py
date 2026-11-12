@@ -9,6 +9,7 @@ confond « absent » et « illisible »), `vat_basis` (un ticket est en TTC, une
 facture en HT) et `raw_unit` sur la ligne.
 """
 
+import json
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # RAW_DIR appartient à l'entrée des documents, pas à l'annotation : il est
 # réexporté ici pour les appelants qui ne connaissent que ce module.
 from gramme.intake import RAW_DIR
+from gramme.models import ProductKey, product_key
 
 TRUTH_DIR = Path("data/truth")
 
@@ -30,6 +32,8 @@ __all__ = [
     "TruthInvoice",
     "TruthLine",
     "VatBasis",
+    "MappingTruth",
+    "load_mapping_truth",
     "load_truth",
 ]
 
@@ -133,6 +137,9 @@ class TruthInvoice(_WithUnreadable):
     vat_basis: VatBasis = VatBasis.EXCLUDING
 
     supplier_name: str | None = None
+    # SIREN du fournisseur, quand la facture le porte : c'est lui qui relie les
+    # lignes aux produits du rapprochement.
+    supplier_siren: str | None = None
     invoice_number: str | None = None
     invoice_date: date | None = None
 
@@ -178,3 +185,60 @@ def load_truth(
         annotations.append(annotation)
 
     return annotations
+
+
+class MappingTruth(BaseModel):
+    """Le bon rapprochement d'un produit fournisseur, établi par un humain.
+
+    `ingredient` à `None` veut dire « ce produit n'est pas un ingrédient » :
+    film étirable, consigne, boisson revendue. Il n'a alors pas de contenu.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    supplier_siren: str | None = None
+    supplier_name: str = Field(min_length=1)
+    supplier_ref: str | None = None
+    raw_label: str = Field(min_length=1)
+
+    # Nom exact de l'ingrédient dans le référentiel.
+    ingredient: str | None
+    # Contenu d'une unité facturée, dans l'unité de base de l'ingrédient.
+    pack_qty: Decimal | None = Field(default=None, gt=0)
+    # Rappel pour l'annotateur : l'unité dans laquelle `pack_qty` est écrit.
+    base_unit: str | None = None
+
+    @model_validator(mode="after")
+    def _check_pack_follows_ingredient(self) -> Self:
+        if (self.ingredient is None) != (self.pack_qty is None):
+            raise ValueError(
+                f"{self.raw_label} : un ingrédient a un contenu, un non-ingrédient n'en a pas"
+            )
+        return self
+
+    @property
+    def key(self) -> ProductKey:
+        return product_key(
+            self.supplier_siren, self.supplier_name, self.supplier_ref, self.raw_label
+        )
+
+
+def load_mapping_truth(path: Path) -> list[MappingTruth]:
+    """Charge la vérité du rapprochement : une liste JSON, un produit par entrée.
+
+    Échoue en nommant l'entrée fautive, et refuse deux entrées pour un même
+    produit : laquelle croire ?
+    """
+    entries = json.loads(path.read_text(encoding="utf-8"))
+    truths: list[MappingTruth] = []
+    seen: set[ProductKey] = set()
+    for index, entry in enumerate(entries):
+        try:
+            truth = MappingTruth.model_validate(entry)
+        except ValueError as e:
+            raise ValueError(f"{path}, entrée {index} : invalide\n{e}") from e
+        if truth.key in seen:
+            raise ValueError(f"{path}, entrée {index} : produit en double {truth.key}")
+        seen.add(truth.key)
+        truths.append(truth)
+    return truths
