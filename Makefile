@@ -51,12 +51,14 @@ demo: demo-db  ## Base de démo fraîche, puis les deux pages sur le réseau loc
 	@echo ""
 	uv run uvicorn gramme.web:app --host 0.0.0.0 --port 8000
 
-# Recrée gramme_synthetic de zéro (migrations, sans seed), puis y écrit les
-# factures de data/synthetic. Après `make corpus` : jamais la base principale.
+# Recrée gramme_synthetic de zéro (migrations, sans seed), y charge le
+# référentiel de l'établissement fictif, puis ses factures de data/synthetic.
+# Après `make corpus` : jamais la base principale.
 synthetic-db:  ## Recrée gramme_synthetic et y écrit le jeu factice
 	@docker compose up -d --wait > /dev/null
 	@$(PSQL) -d gramme -c "DROP DATABASE IF EXISTS gramme_synthetic WITH (FORCE)" -c "CREATE DATABASE gramme_synthetic"
 	@for f in db/migrations/*.sql; do \
 		$(PSQL) -d gramme_synthetic < $$f > /dev/null || exit 1; \
 	done
+	uv run python scripts/load_referential.py
 	uv run python scripts/store_invoices.py --corpus data/synthetic
