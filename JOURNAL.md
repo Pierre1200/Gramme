@@ -296,3 +296,66 @@ champ faux. C'est le résultat attendu d'un générateur et d'un lecteur écrits
 l'un pour l'autre : il prouve que la chaîne et le barème tiennent, rien sur de
 vraies factures. Le banc a été vérifié dans l'autre sens : une extraction
 altérée à la main est bien signalée, prix faux et ligne manquante.
+
+## 11/11/2026 — Écrire en base les factures lues
+
+**Le schéma ne savait pas recevoir une facture lue.** Il lui manquait l'unité
+de chaque ligne — « 2 CT » et « 12,5 KG » y étaient indiscernables, alors que
+tout prix au gramme en dépend —, le taux de TVA par ligne, le total TTC, et
+toute place pour les remises et frais de pied de facture. La migration
+`003_invoice_detail.sql` les ajoute, et `report_flags` compte désormais le
+pied de facture : sans cela, une facture sur huit du jeu factice aurait été
+signalée comme incohérente alors que le document s'explique lui-même.
+
+**Un fournisseur se reconnaît à son SIREN, pas à son nom.** La raison sociale
+change de présentation d'une facture à l'autre ; deux présentations du même
+nom auraient coupé l'historique de prix en deux. Le SIREN est structuré dans
+chaque facture électronique. À défaut (papier), on retombe sur le nom exact.
+
+**Un produit sans référence se reconnaît à son libellé.** La contrainte
+d'unicité sur (fournisseur, référence) ne protégeait pas les petits
+fournisseurs : pour Postgres, deux valeurs vides ne sont jamais égales, et
+chaque facture du primeur aurait créé ses produits une nouvelle fois. Un index
+unique partiel ferme ce trou. Conséquence assumée : un libellé qui change sans
+référence donne un second produit ; c'est à la normalisation de les rattacher
+au même ingrédient.
+
+**Tout ou rien, et une issue nommée.** Une facture entre en base entière ou
+pas du tout, dans une transaction. Quatre issues : écrite, déjà reçue (même
+empreinte), numéro en double (même numéro, autre fichier), à relire (un champ
+indispensable non lu). Aucune valeur supposée ne remplace une valeur non lue.
+
+**Aucun prix relevé à cette étape.** Un prix au gramme exige de savoir qu'un
+carton de beurre contient 10 kg : c'est le travail de la normalisation. Écrire
+un `price_point` maintenant aurait voulu dire en calculer un faux, dans une
+table où rien ne se corrige.
+
+**Une troisième base.** Les factures inventées vont dans `gramme_synthetic`,
+jamais dans la base principale ; le script refuse d'écrire un jeu factice
+ailleurs, ou de vraies factures dans une base de démonstration. Contrôle :
+438 factures, 3 161 lignes, 173 774,31 € HT, au centime près du jeu de vérité.
+
+## 12/11/2026 — Le référentiel de l'établissement fictif en base
+
+**Le prérequis de la normalisation.** La base du jeu factice contenait les
+factures de Maison Trébuchet, mais pas ce qu'elle cuisine. Sans ingrédients, la
+normalisation n'a rien à quoi rattacher un produit fournisseur ; sans recettes,
+le rapport n'a rien dont calculer le coût. `referential.py` charge les deux
+depuis `restaurant.toml`, sans migration : le schéma d'origine les accueillait
+déjà.
+
+**Deux moteurs qui se vérifient l'un l'autre.** Le simulateur calcule en Python
+les besoins bruts de chaque produit vendu, rendements et sous-recettes compris ;
+le moteur de coût les calcule en SQL, par une requête récursive. Avec un prix
+d'un euro par unité de base, le coût d'une portion doit égaler la somme de ses
+besoins bruts. Les deux, écrits séparément, s'accordent sur les 22 produits :
+c'est la preuve que le référentiel est chargé juste, et que les deux
+implémentations disent la même chose.
+
+**Un chargement, pas une mise à jour.** Un second chargement est refusé : il
+doublerait le référentiel sans erreur visible. La base factice se recrée de zéro.
+
+**Ce que ce chargement rend visible.** Les recettes sont en base, aucun
+ingrédient n'a encore de prix : le moteur de coût les ignore en silence et rend
+0 €. C'est le trou connu n° 1, jusqu'ici théorique. Il sera corrigé avant que le
+tableau de bord n'affiche le moindre coût.
