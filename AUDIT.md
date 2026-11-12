@@ -70,9 +70,9 @@ Ce ne sont pas des défauts d'implémentation mais des choix de modélisation
 assumés, chacun documenté à l'endroit concerné et verrouillé par un test quand
 c'est possible.
 
-1. **Un ingrédient sans prix disparaît du calcul en silence** et le coût est
-   sous-estimé. Verrouillé par un test. À corriger avant la saisie des vraies
-   fiches techniques : c'est là qu'apparaîtront des ingrédients jamais facturés.
+1. ~~**Un ingrédient sans prix disparaît du calcul en silence** et le coût est
+   sous-estimé.~~ Corrigé le 12/11/2026 (`004_missing_price.sql`) : le coût
+   devient inconnu et le rapport nomme l'ingrédient manquant.
 2. **Les coproduits sont facturés deux fois** si on les déclare séparément : jus
    et zeste d'un même citron, morceaux d'une même carcasse. Même famille de
    problème que la découpe, traitée dans `CLAUDE.md`.

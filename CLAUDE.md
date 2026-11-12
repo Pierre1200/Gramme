@@ -14,9 +14,10 @@ d'architecture Python l'est moins.
 lecteur de factures électroniques et écriture en base écrits et testés ;
 normalisation pas commencée.**
 
-- Écrit, 195 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 206 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
-  (`001_schema.sql`, `002_rapport.sql`, `003_invoice_detail.sql`)
+  (`001_schema.sql`, `002_rapport.sql`, `003_invoice_detail.sql`,
+  `004_missing_price.sql`)
 - Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
   `simulation.py`, `facturx.py`, `scripts/generate_corpus.py` — voir « Jeu de
   factures factices » plus bas
@@ -194,21 +195,23 @@ Comblés par `002_rapport.sql` (15/09/2026) : marge brute en euros
 `selling_price_ttc`, coût à une date donnée (`recipe_cost_at`, dont
 `recipe_cost` est le cas « aujourd'hui »).
 
+Comblé par `004_missing_price.sql` (12/11/2026) : **un ingrédient sans prix
+rend le coût inconnu** (NULL), au lieu de disparaître du total. Le rapport
+nomme l'ingrédient sur la carte du plat (« Coût incomplet ») et dans « À
+vérifier » ; une dérive dont un bout est inconnu est inconnue (« Pas de
+recul »), plus de fausse alerte pour un ingrédient nouveau. L'unique parcours
+récursif est `recipe_cost_lines_at`. Verrouillé par
+`tests/test_cost.py::TestMissingPrice`.
+
 Restent ouverts :
 
-1. **Ingrédient sans prix ignoré en silence.** `recipe_cost_at` rattache les
-   prix par jointure interne : un ingrédient sans prix à la date demandée
-   disparaît du total, sans avertissement, et le coût est sous-estimé.
-   Verrouillé par `tests/test_cost.py::TestLimiteConnue`. **À corriger avant de
-   saisir les vraies fiches techniques** : c'est là qu'apparaîtront des
-   ingrédients jamais encore facturés.
-2. **Régime HT/TTC.** Un client en franchise de TVA ne la récupère pas, son
+1. **Régime HT/TTC.** Un client en franchise de TVA ne la récupère pas, son
    coût réel est le TTC. En V1 (un seul établissement), c'est un réglage du
    client. Le taux de chaque ligne est désormais lu et stocké
    (`invoice_line.vat_rate`, depuis `003_invoice_detail.sql`) ; **reste le
    réglage du client et son usage dans le calcul du prix**, à la
    normalisation.
-3. **Coproduits.** Jus et zeste d'un même citron, jaunes et blancs d'un même
+2. **Coproduits.** Jus et zeste d'un même citron, jaunes et blancs d'un même
    œuf : deux composants valorisés chacun sur leur brut font payer deux fois
    le même achat. Même famille de problème que la découpe de carcasse
    ci-dessous. Le seed de démo contourne en ne comptant que le jus.
@@ -293,8 +296,8 @@ ordre, sans proposer une étape tant que la précédente n'est pas finie :
    sous-étapes, une PR chacune : le référentiel du jeu factice en base
    (**fait**) ; le barème du rapprochement (**fait**) ; `llm.py` et le premier
    prompt, une fois le fournisseur de modèle choisi ;
-   `normalize.py` lui-même. Le trou connu n° 1 (ingrédient sans prix ignoré)
-   se corrige avant le tableau de bord
+   `normalize.py` lui-même. Le trou « ingrédient sans prix ignoré » est
+   corrigé (**fait**, 12/11) : un prix manquant rend le coût inconnu
 4. Le tableau de bord, alimenté par cette chaîne et non par un seed
 5. `report.py`
 

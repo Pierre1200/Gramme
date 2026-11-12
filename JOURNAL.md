@@ -391,3 +391,36 @@ distinguerait pas ne mesurerait rien.
 **La même clé que la base.** Un produit se reconnaît à son fournisseur (SIREN, à
 défaut nom) et à sa référence (à défaut son libellé), exactement comme à
 l'écriture : la vérité compte 66 produits, ceux que les factures créent en base.
+
+## 12/11/2026 — Un prix manquant rend le coût inconnu
+
+**Le défaut.** Le moteur de coût rattachait les prix par jointure interne : un
+ingrédient sans prix à la date demandée sortait du total, sans un mot. Sur la
+base factice, où aucun prix n'existe encore, les 22 plats affichaient un ratio
+de 0 %. Avec de vraies fiches techniques, ce serait un ratio simplement trop
+bas, que personne ne remarquerait.
+
+**Inconnu plutôt que partiel.** Deux réponses possibles : afficher le coût des
+ingrédients connus en le marquant incomplet, ou déclarer le coût inconnu. La
+seconde est retenue. Un ratio sous-estimé reste à l'écran et finit lu comme
+vrai, alors que la règle du projet est de ne jamais deviner un montant. En SQL,
+le coût vaut NULL dès qu'un prix manque, et le NULL se propage seul à la marge
+et au ratio. La carte du plat dit « Coût incomplet » et nomme l'ingrédient ;
+celui-ci entre une fois dans « À vérifier », quel que soit le nombre de plats
+touchés : c'est un prix à obtenir, une seule fois.
+
+**Le même défaut fabriquait de fausses alertes.** Un ingrédient acheté pour la
+première fois il y a un mois manquait au coût d'il y a six semaines : le coût
+d'avant était trop bas, et le plat partait en alerte. Une dérive dont un bout
+est inconnu est maintenant inconnue, et le niveau aussi ; sans cela, le calcul
+du niveau aurait rangé le plat en « ok ». La carte dit « Pas de recul » et
+montre le ratio du jour.
+
+**Un seul parcours de l'arbre.** La descente récursive des recettes vit
+désormais dans une seule fonction, qui rend les ingrédients feuilles avec leur
+prix ou sans. Le coût la somme, le rapport y lit les noms manquants : deux
+copies de la descente finiraient par ne plus compter la même chose.
+
+**La démo ne bouge pas.** Aucun de ses ingrédients n'est sans prix, ni
+aujourd'hui ni il y a six semaines : ses sept plats gardent les mêmes chiffres
+au centime, et un test le garantit pour la suite.
