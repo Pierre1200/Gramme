@@ -24,7 +24,7 @@ from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from gramme.truth import SourceQuality, TruthInvoice, TruthLine, VatBasis
+from gramme.truth import MappingTruth, SourceQuality, TruthInvoice, TruthLine, VatBasis
 from gramme.world import WEEKDAYS, Product, Supplier, World
 
 CENT = Decimal("0.01")
@@ -40,6 +40,9 @@ MARKET_NOISE = 0.025
 # Fichier déposé à la racine d'un jeu factice généré : c'est lui qui distingue
 # un dossier de factures inventées d'un dossier de vraies factures.
 CORPUS_MARKER = ".generated-by-gramme"
+
+# Libellé de la ligne qui rembourse une consigne au retour des casiers.
+RETURN_PREFIX = "RETOUR "
 
 # La simulation déborde de la période, puis l'excédent est écarté : sans cela
 # la dernière commande n'aurait pas de « livraison suivante » pour borner ce
@@ -91,6 +94,7 @@ class Adjustment:
 class Invoice:
     supplier: str
     supplier_name: str
+    supplier_siren: str
     number: str
     issued_on: date
     kind: Literal["invoice", "credit_note"]
@@ -431,6 +435,7 @@ def _build(
     return Invoice(
         supplier=supplier_key,
         supplier_name=supplier.name,
+        supplier_siren=supplier.siren,
         number=number,
         issued_on=day,
         kind=kind,
@@ -495,7 +500,7 @@ def _supplier_invoices(
                 if returned:
                     lines.append(
                         InvoiceLine(
-                            f"RETOUR {deposit.label}",
+                            f"{RETURN_PREFIX}{deposit.label}",
                             None,
                             -returned,
                             "PCE",
@@ -618,6 +623,7 @@ def to_truth(
         quality=SourceQuality.PDF,
         vat_basis=VatBasis.EXCLUDING,
         supplier_name=invoice.supplier_name,
+        supplier_siren=invoice.supplier_siren,
         invoice_number=invoice.number,
         invoice_date=invoice.issued_on,
         total_ht=invoice.total_ht,
@@ -625,3 +631,42 @@ def to_truth(
         lines=lines,
         pitfalls=list(invoice.pitfalls),
     )
+
+
+def mapping_truth(world: World) -> list[MappingTruth]:
+    """Le bon rapprochement de chaque produit que les factures font apparaître.
+
+    Le catalogue de chaque fournisseur, plus ce que les factures créent sans
+    qu'il y soit : la consigne et son retour, qui ne sont pas des ingrédients,
+    et l'ancien libellé d'un produit sans référence, qui devient en base un
+    produit distinct du même ingrédient.
+    """
+    truths: list[MappingTruth] = []
+    for supplier in world.suppliers.values():
+
+        def entry(
+            label: str, ref: str | None, ingredient_key: str | None, contains, supplier=supplier
+        ):
+            ingredient = world.ingredients.get(ingredient_key)
+            return MappingTruth(
+                supplier_siren=supplier.siren,
+                supplier_name=supplier.name,
+                supplier_ref=ref,
+                raw_label=label,
+                ingredient=ingredient.name if ingredient else None,
+                pack_qty=contains if ingredient else None,
+                base_unit=ingredient.unit if ingredient else None,
+            )
+
+        for product in supplier.products:
+            truths.append(entry(product.label, product.ref, product.ingredient, product.contains))
+            # Avec une référence, l'ancien libellé reste le même produit ; sans,
+            # il en devient un autre.
+            if product.relabel and not product.ref:
+                truths.append(
+                    entry(product.relabel.was, None, product.ingredient, product.contains)
+                )
+            if product.deposit:
+                for label in (product.deposit.label, RETURN_PREFIX + product.deposit.label):
+                    truths.append(entry(label, None, None, None))
+    return truths

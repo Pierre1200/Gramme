@@ -8,6 +8,7 @@ le XML de la norme y est joint, et l'annotation de vérité est écrite à côt�
     data/synthetic/raw/     les factures, un PDF Factur-X par document
     data/synthetic/truth/   leur vérité, un JSON par document
     data/synthetic/resent/  les factures renvoyées une seconde fois, à l'identique
+    data/synthetic/mapping/ le bon rapprochement de chaque produit fournisseur
 
 Les dates partent d'aujourd'hui : relancer la commande rafraîchit tout le jeu.
 Demande Chrome ou Chromium sur la machine (variable CHROME_PATH pour un autre
@@ -15,6 +16,7 @@ emplacement).
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -29,7 +31,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from gramme import facturx
-from gramme.simulation import CORPUS_MARKER, Invoice, simulate, to_truth
+from gramme.bench import MAPPING_TRUTH
+from gramme.simulation import CORPUS_MARKER, Invoice, mapping_truth, simulate, to_truth
 from gramme.world import World, load_world
 
 TEMPLATE_DIR = Path("corpus")
@@ -120,7 +123,7 @@ def prepare_output(output: Path) -> None:
     # d'autre n'est jamais vidé.
     if output.exists() and any(output.iterdir()) and not (output / CORPUS_MARKER).exists():
         raise SystemExit(f"{output} n'a pas été créé par ce script : je ne le vide pas.")
-    for name in ("raw", "truth", "resent"):
+    for name in ("raw", "truth", "resent", "mapping"):
         shutil.rmtree(output / name, ignore_errors=True)
         (output / name).mkdir(parents=True)
     (output / CORPUS_MARKER).touch()
@@ -139,6 +142,14 @@ def main() -> int:
     invoices = corpus.invoices[-args.limit :] if args.limit else corpus.invoices
     environment = build_environment()
     prepare_output(args.out)
+    (args.out / MAPPING_TRUTH).write_text(
+        json.dumps(
+            [truth.model_dump(mode="json") for truth in mapping_truth(world)],
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     def produce(invoice: Invoice) -> None:
         supplier = world.suppliers[invoice.supplier]
