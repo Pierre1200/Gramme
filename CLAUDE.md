@@ -10,25 +10,33 @@ Projet solo, en apprentissage. Étudiant développeur, ancien
 cuisinier-pâtissier — la connaissance métier est solide, l'expérience
 d'architecture Python l'est moins.
 
-**État actuel (11/11/2026) : fondations, démo, jeu de factures factices et
-lecteur de factures électroniques écrits et testés ; écriture en base pas
-commencée.**
+**État actuel (11/11/2026) : fondations, démo, jeu de factures factices,
+lecteur de factures électroniques et écriture en base écrits et testés ;
+normalisation pas commencée.**
 
-- Écrit, 168 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
+- Écrit, 185 tests verts : `models.py`, `intake.py`, `truth.py`, `scoring.py`,
   `bench.py`, `scripts/store_documents.py`, `scripts/evaluate.py`, schéma SQL
-  (`001_schema.sql`, `002_rapport.sql`)
+  (`001_schema.sql`, `002_rapport.sql`, `003_invoice_detail.sql`)
 - Jeu factice (`make corpus`) : `corpus/restaurant.toml`, `world.py`,
   `simulation.py`, `facturx.py`, `scripts/generate_corpus.py` — voir « Jeu de
   factures factices » plus bas
-- Démo prête (`make demo`) : `config.py`, `db.py` (lecture seule), `web.py`,
+- Démo prête (`make demo`) : `config.py`, `db.py` (lecture du rapport), `web.py`,
   `templates/`, seed fictif `db/seed/demo.sql` sur la base `gramme_demo`
 - Lecteur de Factur-X (`make read`) : `facturx.read_invoice` rend un
   `RawInvoice` ; un PDF sans XML lève `NotFacturX`. Sur le jeu factice,
   `make eval CORPUS=data/synthetic` donne 438 documents sans un champ faux :
   c'est une vérification de tuyauterie, pas une mesure de qualité
-- Pas encore écrit : l'écriture en base dans `db.py`, `normalize.py`,
-  `llm.py`, `report.py`, le tableau de bord ; `extract.py` (lecture papier)
-  est reporté
+- Écriture en base (`make synthetic-db`) : `db.store_invoice` écrit une
+  facture lue, tout ou rien, et dit ce qu'elle est devenue (écrite, déjà
+  reçue, numéro en double, à relire). Le jeu factice va dans la base
+  `gramme_synthetic` : 438 factures, au centime près du jeu de vérité. Aucun
+  `price_point` créé : c'est le travail de la normalisation
+- Référentiel du jeu factice : `referential.load_referential` charge les 57
+  ingrédients et 38 recettes de `restaurant.toml` dans `gramme_synthetic`
+  (`make synthetic-db` le fait avant les factures). Le moteur de coût SQL et
+  le simulateur s'accordent sur les 22 produits vendus
+- Pas encore écrit : `normalize.py`, `llm.py`, `report.py`, le tableau de
+  bord ; `extract.py` (lecture papier) est reporté
 - Aucune vraie facture annotée dans `data/truth/`, aucun appel à un modèle
 - Premiers documents attendus : un traiteur, et un hôtel-restaurant qui calcule
   déjà ses marges à la main (fiches techniques et factures)
@@ -189,11 +197,12 @@ Restent ouverts :
    Verrouillé par `tests/test_cost.py::TestLimiteConnue`. **À corriger avant de
    saisir les vraies fiches techniques** : c'est là qu'apparaîtront des
    ingrédients jamais encore facturés.
-2. **Régime HT/TTC** : n'existe que dans `truth.py`. Un client en franchise de
-   TVA ne la récupère pas, son coût réel est le TTC. En V1 (un seul
-   établissement), c'est un réglage du client ; le taux est porté par la ligne
-   de facture (5,5 % alimentaire, 20 % le reste), colonne absente du schéma.
-   **Reporté à l'extraction** : la démo n'en a pas besoin.
+2. **Régime HT/TTC.** Un client en franchise de TVA ne la récupère pas, son
+   coût réel est le TTC. En V1 (un seul établissement), c'est un réglage du
+   client. Le taux de chaque ligne est désormais lu et stocké
+   (`invoice_line.vat_rate`, depuis `003_invoice_detail.sql`) ; **reste le
+   réglage du client et son usage dans le calcul du prix**, à la
+   normalisation.
 3. **Coproduits.** Jus et zeste d'un même citron, jaunes et blancs d'un même
    œuf : deux composants valorisés chacun sur leur brut font payer deux fois
    le même achat. Même famille de problème que la découpe de carcasse
@@ -271,9 +280,15 @@ ordre, sans proposer une étape tant que la précédente n'est pas finie :
 1. Le lecteur de Factur-X (XML → `RawInvoice`), dans `facturx.py`. **Fait.**
    Le contrat a gagné `supplier_ref` sur la ligne et `adjustments` (remises et
    frais de pied de facture) sur la facture ; un avoir est rendu en négatif.
-2. L'écriture en base des factures lues, dans `db.py`
+2. L'écriture en base des factures lues, dans `db.py`. **Fait.** Un
+   fournisseur se reconnaît à son SIREN ; un produit à sa référence, à défaut à
+   son libellé ; tout produit naît `pending`, sans prix relevé.
 3. `normalize.py` — rapprocher les libellés des ingrédients : c'est là que le
-   modèle de langage sert, donc `llm.py` arrive avec lui
+   modèle de langage sert, donc `llm.py` arrive avec lui. Découpée le 12/11 en
+   sous-étapes, une PR chacune : le référentiel du jeu factice en base
+   (**fait**) ; le barème du rapprochement ; `llm.py` et le premier prompt ;
+   `normalize.py` lui-même. Le trou connu n° 1 (ingrédient sans prix ignoré)
+   se corrige avant le tableau de bord
 4. Le tableau de bord, alimenté par cette chaîne et non par un seed
 5. `report.py`
 
