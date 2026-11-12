@@ -142,7 +142,6 @@ fournisseurs. Un restaurateur qui les confie confie sa marge.
 Elles sont écrites dans le code, aux endroits concernés, et suivies dans
 [AUDIT.md](AUDIT.md) :
 
-- un ingrédient sans prix disparaît du calcul sans avertissement ;
 - les coproduits (jus et zeste d'un même citron, morceaux d'une même carcasse)
   sont facturés deux fois si on les déclare séparément ;
 - l'anti-doublon reconnaît un fichier renvoyé, pas une facture rephotographiée ;

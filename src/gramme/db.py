@@ -38,14 +38,21 @@ class DishMargin:
     portions: int | None
     selling_price_incl_vat: Decimal
     selling_price: Decimal
-    cost_per_portion: Decimal
-    margin_per_portion: Decimal
-    margin_per_portion_before: Decimal
-    ratio: Decimal
-    ratio_before: Decimal
-    drift_points: Decimal
-    # 'ok', 'vigilance' ou 'alerte' — décidé en SQL, la page ne compare rien.
-    level: str
+    # None : coût inconnu, un ingrédient au moins n'a pas de prix (voir
+    # missing_prices). Un coût incomplet n'est jamais affiché comme un coût.
+    cost_per_portion: Decimal | None
+    margin_per_portion: Decimal | None
+    margin_per_portion_before: Decimal | None
+    ratio: Decimal | None
+    ratio_before: Decimal | None
+    # None aussi quand seul le coût d'il y a 6 semaines est inconnu : un
+    # ingrédient nouveau ne fabrique pas de dérive.
+    drift_points: Decimal | None
+    # 'ok', 'vigilance', 'alerte', ou None si la dérive est inconnue — décidé
+    # en SQL, la page ne compare rien.
+    level: str | None
+    # Noms des ingrédients sans prix aujourd'hui ; vide si le coût est complet.
+    missing_prices: list[str]
 
 
 @dataclass(frozen=True)
@@ -60,9 +67,9 @@ class PriceChange:
 
 @dataclass(frozen=True)
 class Flag:
-    reason: str  # 'label_to_confirm' ou 'total_mismatch'
+    reason: str  # 'label_to_confirm', 'total_mismatch' ou 'missing_price'
     label: str
-    supplier: str
+    supplier: str | None  # None pour un prix manquant : aucun fournisseur en cause
     invoice_date: date | None
     gap: Decimal | None
 
@@ -86,9 +93,9 @@ _SUMMARY_SQL = """
 _MARGINS_SQL = """
     SELECT recipe_id, recipe, portions, selling_price_incl_vat, selling_price,
            cost_per_portion, margin_per_portion, margin_per_portion_before,
-           ratio, ratio_before, drift_points, level
+           ratio, ratio_before, drift_points, level, missing_prices
     FROM report_margins
-    ORDER BY drift_points DESC, recipe
+    ORDER BY drift_points DESC NULLS LAST, recipe
 """
 _PRICE_CHANGES_SQL = """
     SELECT ingredient_id, ingredient, price_before, price_after, unit, change_pct

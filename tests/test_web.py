@@ -15,7 +15,7 @@ from gramme import web
 from gramme.db import DishMargin, Flag, PriceChange, Report, Summary
 
 REPORT = Report(
-    summary=Summary(dishes_on_alert=1, prices_up=1, items_to_check=1),
+    summary=Summary(dishes_on_alert=1, prices_up=1, items_to_check=2),
     margins=[
         DishMargin(
             recipe_id=4,
@@ -30,7 +30,40 @@ REPORT = Report(
             ratio_before=Decimal("30.0"),
             drift_points=Decimal("2.8"),
             level="alerte",
-        )
+            missing_prices=[],
+        ),
+        # Coût connu aujourd'hui, mais pas il y a 6 semaines : ingrédient nouveau.
+        DishMargin(
+            recipe_id=6,
+            recipe="Velouté de potimarron",
+            portions=10,
+            selling_price_incl_vat=Decimal("9.00"),
+            selling_price=Decimal("8.18"),
+            cost_per_portion=Decimal("1.64"),
+            margin_per_portion=Decimal("6.54"),
+            margin_per_portion_before=None,
+            ratio=Decimal("20.0"),
+            ratio_before=None,
+            drift_points=None,
+            level=None,
+            missing_prices=[],
+        ),
+        # Un ingrédient sans prix : la base déclare le coût inconnu.
+        DishMargin(
+            recipe_id=7,
+            recipe="Risotto au safran",
+            portions=8,
+            selling_price_incl_vat=Decimal("19.00"),
+            selling_price=Decimal("17.27"),
+            cost_per_portion=None,
+            margin_per_portion=None,
+            margin_per_portion_before=None,
+            ratio=None,
+            ratio_before=None,
+            drift_points=None,
+            level=None,
+            missing_prices=["safran"],
+        ),
     ],
     price_changes=[
         PriceChange(
@@ -45,7 +78,8 @@ REPORT = Report(
             "Marée du port (exemple)",
             date(2026, 9, 12),
             Decimal("4.20"),
-        )
+        ),
+        Flag("missing_price", "safran", None, None, None),
     ],
 )
 
@@ -84,6 +118,28 @@ class TestReportPage:
         assert "+2,8 pts" in page
         assert "−8,2 %" in page  # vrai signe moins
         assert "4,20 €" in page
+
+    def test_an_incomplete_cost_is_never_shown_as_a_cost(self, client):
+        # Décision 5 : un coût incomplet n'est pas affiché, même partiel.
+        page = client.get("/rapport").text
+        card = page[page.index("Risotto au safran") :].split("</article>")[0]
+        assert "Coût incomplet" in card
+        assert "Il manque le prix de : safran." in card
+        assert "%" not in card
+        assert "vous reste" not in card
+
+    def test_a_dish_without_history_shows_no_drift(self, client):
+        page = client.get("/rapport").text
+        card = page[page.index("Velouté de potimarron") :].split("</article>")[0]
+        assert "Pas de recul" in card
+        assert "20,0\N{NO-BREAK SPACE}%" in card
+        assert "Stable" not in card
+        assert "il y a 6 semaines" in card and "contre" not in card
+
+    def test_a_missing_price_is_listed_to_check(self, client):
+        page = client.get("/rapport").text
+        assert "Un prix manquant" in page
+        assert "None" not in page
 
     def test_the_week_is_announced_not_the_day(self, client):
         # La démo peut tomber un mardi : « Rapport du lundi — mardi 15 » se

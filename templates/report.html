@@ -2,7 +2,8 @@
 {#
   Aucun calcul dans ce template (décision 2). Chaque nombre affiché sort tel
   quel des vues report_* ; les filtres ne font que la mise en forme. Les seules
-  comparaisons servent au pluriel et au choix d'une couleur.
+  comparaisons servent au pluriel, au choix d'une couleur, et à ne pas
+  afficher un chiffre que la base déclare inconnu.
 #}
 {% block title %}Rapport du lundi{% endblock %}
 
@@ -25,6 +26,7 @@
   .dish::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--olive); }
   .dish--alerte::before    { background: var(--tomato); }
   .dish--vigilance::before { background: var(--saffron); }
+  .dish--unknown::before   { background: var(--muted); }
   .dish__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
   .dish h3 { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.3; }
   .dish__left { margin: 12px 0 12px; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; }
@@ -37,6 +39,9 @@
   .gauge__bar { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--olive); }
   .dish--alerte .gauge__bar    { background: var(--tomato); }
   .dish--vigilance .gauge__bar { background: var(--saffron); }
+  .dish--unknown .gauge__bar   { background: var(--muted); }
+  .pill--neutral { background: var(--track); color: var(--ink); }
+  .dish__missing { margin: 12px 0 0; }
   .gauge__marker {
     position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px;
     border-radius: 2px; background: var(--ink); opacity: .55;
@@ -95,10 +100,14 @@
 <h2 class="section-title">Vos plats <small>marge par portion</small></h2>
 <div class="dishes">
   {% for dish in report.margins %}
-  <article class="card dish dish--{{ dish.level }}">
+  <article class="card dish dish--{{ dish.level or 'unknown' }}">
     <div class="dish__top">
       <h3>{{ dish.recipe }}</h3>
-      {% if dish.level == 'alerte' %}
+      {% if dish.missing_prices %}
+        <span class="pill pill--neutral">Coût incomplet</span>
+      {% elif dish.level is none %}
+        <span class="pill pill--neutral">Pas de recul</span>
+      {% elif dish.level == 'alerte' %}
         <span class="pill pill--tomato figure">{{ dish.drift_points | drift }}</span>
       {% elif dish.level == 'vigilance' %}
         <span class="pill pill--saffron figure">{{ dish.drift_points | drift }}</span>
@@ -107,6 +116,27 @@
       {% endif %}
     </div>
 
+    {% if dish.missing_prices %}
+    {# Un coût incomplet n'est pas un coût : ni marge, ni ratio, ni jauge. #}
+    <p class="dish__missing">Il manque le prix de : {{ dish.missing_prices | join(', ') }}.</p>
+    <p class="dish__detail figure">
+      Coût et marge inconnus tant que ce prix manque · vendu {{ dish.selling_price_incl_vat | euros }} TTC
+    </p>
+    {% elif dish.level is none %}
+    <p class="dish__left">
+      <span class="dish__amount figure">{{ dish.margin_per_portion | euros }}</span>
+      <span class="dish__caption">vous reste ; pas encore de prix il y a 6 semaines pour comparer</span>
+    </p>
+
+    <div class="gauge" role="img" aria-label="Ratio de {{ dish.ratio | percent }}">
+      <span class="gauge__bar" style="width: {{ dish.ratio }}%"></span>
+    </div>
+
+    <p class="dish__detail figure">
+      Ratio <strong>{{ dish.ratio | percent }}</strong>
+      · coût {{ dish.cost_per_portion | euros }} · vendu {{ dish.selling_price_incl_vat | euros }} TTC
+    </p>
+    {% else %}
     <p class="dish__left">
       <span class="dish__amount figure">{{ dish.margin_per_portion | euros }}</span>
       <span class="dish__caption">vous reste, contre {{ dish.margin_per_portion_before | euros }} il y a 6 semaines</span>
@@ -122,6 +152,7 @@
       Ratio <strong>{{ dish.ratio | percent }}</strong> (était {{ dish.ratio_before | percent }})
       · coût {{ dish.cost_per_portion | euros }} · vendu {{ dish.selling_price_incl_vat | euros }} TTC
     </p>
+    {% endif %}
   </article>
   {% else %}
   <p class="card empty">Aucun plat enregistré pour l'instant.</p>
@@ -155,6 +186,13 @@
         <p class="flag__title">Un produit à confirmer</p>
         <p><code>{{ flag.label }}</code></p>
         <p class="muted">{{ flag.supplier }} · de quel produit s'agit-il ?</p>
+      </div>
+    {% elif flag.reason == 'missing_price' %}
+      <span class="flag__icon" aria-hidden="true">€</span>
+      <div>
+        <p class="flag__title">Un prix manquant</p>
+        <p><code>{{ flag.label }}</code></p>
+        <p class="muted">Aucune facture rattachée : le coût des plats qui l'utilisent reste inconnu.</p>
       </div>
     {% else %}
       <span class="flag__icon" aria-hidden="true">≠</span>
